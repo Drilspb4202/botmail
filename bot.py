@@ -1056,56 +1056,32 @@ def format_message(msg, format_type='full', idx=None, total=None):
     from_field = msg.get('from', 'Неизвестно').replace('_', '\\_').replace('*', '\\*').replace('`', '\\`')
     subject = msg.get('subject', 'Без темы').replace('_', '\\_').replace('*', '\\*').replace('`', '\\`')
     
-    if format_type == 'compact':
-        return f"""📨 {idx}/{total if total else '?'}
-От: {from_field}
-Тема: {subject}"""
-    
-    elif format_type == 'brief':
-        message_text = f"""📨 {idx}/{total if total else '?'}
+    # Всегда показываем полное содержимое
+    message_text = f"""📨 {idx}/{total if total else '?'}
 От: {from_field}
 Тема: {subject}
 Дата: {msg.get('date', 'Не указана')}
 
-📝 {msg_content[:100]}{"..." if len(msg_content) > 100 else ""}"""
+📝 Текст письма:
+{msg_content}"""
 
-        if links:
-            message_text += "\n\n🔗 Ссылки для входа:"
-            for link in links[:3]:
-                message_text += f"\n{link}"
-        
-        return message_text
-    
-    else:  # full
-        message_text = f"""📨 {idx}/{total if total else '?'}
-От: {from_field}
-Тема: {subject}
-Дата: {msg.get('date', 'Не указана')}
+    if buttons:
+        message_text += "\n\n🔘 Кнопки в письме:"
+        for button in buttons:
+            message_text += f"\n• {button.strip()}"
 
-📝 Текст:
-{msg_content[:300]}{"..." if len(msg_content) > 300 else ""}"""
+    if links:
+        message_text += "\n\n🔗 Ссылки для входа:"
+        for link in links:
+            message_text += f"\n{link}"
 
-        if buttons:
-            message_text += "\n\n🔘 Кнопки в письме:"
-            for button in buttons[:3]:
-                message_text += f"\n• {button.strip()}"
-
-        if links:
-            message_text += "\n\n🔗 Ссылки для входа:"
-            for link in links[:3]:
-                message_text += f"\n{link}"
-            if len(links) > 3:
-                message_text += "\n..."
-
-        codes = re.findall(r'\b\d{4,8}\b', msg_content)
-        if codes:
-            message_text += "\n\n🔑 Коды:"
-            for code in codes[:3]:
-                message_text += f"\n`{code}`"
-            if len(codes) > 3:
-                message_text += "\n..."
-                
-        return message_text
+    codes = re.findall(r'\b\d{4,8}\b', msg_content)
+    if codes:
+        message_text += "\n\n🔑 Коды:"
+        for code in codes:
+            message_text += f"\n`{code}`"
+            
+    return message_text
 
 @bot.message_handler(commands=['format'])
 def change_format(message):
