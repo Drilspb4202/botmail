@@ -774,13 +774,11 @@ def messages_command(message):
     """Обработчик команды /messages"""
     get_messages(message)
 
-def check_messages_job(chat_id):
+def check_messages_job(chat_id, email):
     """Фоновая задача для проверки сообщений"""
-    if chat_id not in user_emails:
+    if chat_id not in user_emails or email not in user_emails[chat_id]:
         return
         
-    email_data = user_emails[chat_id]
-    email = email_data['email']
     url = f"{GET_MESSAGES_URL}?mail={email}"
     
     try:
@@ -793,12 +791,14 @@ def check_messages_job(chat_id):
                 if messages:
                     # Инициализируем множество прочитанных сообщений
                     if chat_id not in user_read_messages:
-                        user_read_messages[chat_id] = set()
+                        user_read_messages[chat_id] = {}
+                    if email not in user_read_messages[chat_id]:
+                        user_read_messages[chat_id][email] = set()
                     
                     # Проверяем каждое сообщение
                     for msg in messages:
                         msg_id = msg.get('id', '')
-                        if msg_id and msg_id not in user_read_messages[chat_id]:
+                        if msg_id and msg_id not in user_read_messages[chat_id][email]:
                             # Форматируем и отправляем новое сообщение
                             format_type = user_message_format.get(chat_id, 'full')
                             message_text = format_message(msg, format_type, 1, 1)
@@ -813,12 +813,12 @@ def check_messages_job(chat_id):
                                 # Отправляем сообщение
                                 bot.send_message(
                                     chat_id,
-                                    "📬 *Новое сообщение:*\n" + message_text,
+                                    f"📬 *Новое сообщение в ящике* `{email}`:\n" + message_text,
                                     parse_mode='Markdown',
                                     reply_markup=msg_keyboard
                                 )
                                 # Отмечаем как прочитанное только после успешной отправки
-                                user_read_messages[chat_id].add(msg_id)
+                                user_read_messages[chat_id][email].add(msg_id)
                             except Exception as e:
                                 print(f"DEBUG - Error sending new message: {str(e)}")
                                 try:
@@ -826,11 +826,11 @@ def check_messages_job(chat_id):
                                     short_message = format_message(msg, 'compact', 1, 1)
                                     bot.send_message(
                                         chat_id,
-                                        "📬 *Новое сообщение:*\n" + short_message,
+                                        f"📬 *Новое сообщение в ящике* `{email}`:\n" + short_message,
                                         parse_mode='Markdown',
                                         reply_markup=msg_keyboard
                                     )
-                                    user_read_messages[chat_id].add(msg_id)
+                                    user_read_messages[chat_id][email].add(msg_id)
                                 except Exception as e2:
                                     print(f"DEBUG - Error sending short message: {str(e2)}")
             except Exception as e:
@@ -839,42 +839,63 @@ def check_messages_job(chat_id):
         print(f"DEBUG - Error in check_messages_job request: {str(e)}")
 
 @bot.message_handler(commands=['start_checking'])
-def start_checking(message):
+def start_checking(message, email=None):
     """Запуск автоматической проверки сообщений"""
     chat_id = message.chat.id
     if chat_id not in user_emails:
         bot.reply_to(message, "❌ Сначала создайте email с помощью /newmail")
         return
         
-    if chat_id in check_timers:
-        bot.reply_to(message, "✅ Автоматическая проверка уже запущена")
-        return
+    if chat_id not in check_timers:
+        check_timers[chat_id] = {}
         
-    # Используем установленный интервал или значение по умолчанию
+    # Если email не указан, проверяем все ящики пользователя
+    if email is None:
+        for email in user_emails[chat_id].keys():
+            if email not in check_timers[chat_id]:
+                start_email_checking(chat_id, email)
+    else:
+        if email not in check_timers[chat_id]:
+            start_email_checking(chat_id, email)
+
+def start_email_checking(chat_id, email):
+    """Запускает проверку конкретного почтового ящика"""
     interval = check_intervals.get(chat_id, 15)
-        
-    # Запускаем периодическую проверку
-    import threading
+    
     def check_loop():
-        while chat_id in check_timers:
-            check_messages_job(chat_id)
+        while chat_id in check_timers and email in check_timers[chat_id]:
+            check_messages_job(chat_id, email)
             time.sleep(interval)
             
-    check_timers[chat_id] = threading.Thread(target=check_loop)
-    check_timers[chat_id].daemon = True
-    check_timers[chat_id].start()
-    
-    bot.reply_to(message, f"✅ Автоматическая проверка сообщений запущена\nИнтервал проверки: {interval} секунд")
+    check_timers[chat_id][email] = threading.Thread(target=check_loop)
+    check_timers[chat_id][email].daemon = True
+    check_timers[chat_id][email].start()
 
 @bot.message_handler(commands=['stop_checking'])
-def stop_checking(message):
+def stop_checking(message, email=None):
     """Остановка автоматической проверки сообщений"""
     chat_id = message.chat.id
     if chat_id in check_timers:
-        del check_timers[chat_id]
-        bot.reply_to(message, "✅ Автоматическая проверка остановлена")
+        if email is None:
+            # Останавливаем проверку всех ящиков
+            for email in list(check_timers[chat_id].keys()):
+                stop_checking_email(chat_id, email)
+            del check_timers[chat_id]
+            bot.reply_to(message, "✅ Автоматическая проверка остановлена для всех ящиков")
+        else:
+            # Останавливаем проверку конкретного ящика
+            if email in check_timers[chat_id]:
+                stop_checking_email(chat_id, email)
+                bot.reply_to(message, f"✅ Автоматическая проверка остановлена для {email}")
     else:
         bot.reply_to(message, "❌ Автоматическая проверка не была запущена")
+
+def stop_checking_email(chat_id, email):
+    """Останавливает проверку конкретного почтового ящика"""
+    if chat_id in check_timers and email in check_timers[chat_id]:
+        del check_timers[chat_id][email]
+        if not check_timers[chat_id]:  # Если больше нет активных проверок
+            del check_timers[chat_id]
 
 @bot.message_handler(commands=['domains'])
 def show_domains(message):
