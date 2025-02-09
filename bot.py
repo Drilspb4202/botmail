@@ -61,12 +61,63 @@ AVAILABLE_DOMAINS = [
     'spam4.me'
 ]
 
+# Список администраторов бота (ID пользователей Telegram)
+ADMIN_IDS = [int(os.getenv('ADMIN_ID', '0'))]  # Добавьте сюда ID администраторов
+
+# Глобальная статистика бота
+bot_stats = {
+    'start_time': time.time(),
+    'total_users': set(),  # Уникальные пользователи
+    'total_emails_created': 0,
+    'total_messages_received': 0,
+    'total_checks': 0,
+    'active_emails': 0,  # Текущие активные почтовые ящики
+}
+
 # Добавляем словарь для хранения статистики
 user_stats = {}
 
 # Константы для времени жизни почты
 EMAIL_LIFETIME = 3600  # 1 час по умолчанию
 EMAIL_CHECK_INTERVAL = 15  # Проверка каждые 15 секунд
+
+# Списки для генерации имен
+FIRST_NAMES = [
+    # Английские имена
+    "Alex", "Michael", "David", "John", "James", "Robert", "William", "Thomas",
+    "Daniel", "Richard", "Joseph", "Charles", "Christopher", "Paul", "Mark",
+    "Donald", "George", "Kenneth", "Steven", "Edward", "Brian", "Ronald",
+    "Anthony", "Kevin", "Jason", "Matthew", "Gary", "Timothy", "Jose", "Larry",
+    # Русские имена (транслит)
+    "Ivan", "Dmitry", "Sergey", "Andrey", "Pavel", "Mikhail", "Nikolay", "Vladimir",
+    "Alexander", "Maxim", "Anton", "Roman", "Artem", "Denis", "Evgeny", "Igor",
+    "Oleg", "Victor", "Yury", "Boris", "Konstantin", "Leo", "Peter", "Vadim"
+]
+
+LAST_NAMES = [
+    # Английские фамилии
+    "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis",
+    "Rodriguez", "Martinez", "Hernandez", "Lopez", "Gonzalez", "Wilson", "Anderson",
+    "Thomas", "Taylor", "Moore", "Jackson", "Martin", "Lee", "Thompson", "White",
+    "Harris", "Clark", "Lewis", "Robinson", "Walker", "Hall", "Young",
+    # Русские фамилии (транслит)
+    "Ivanov", "Petrov", "Sidorov", "Smirnov", "Kuznetsov", "Popov", "Sokolov",
+    "Lebedev", "Kozlov", "Novikov", "Morozov", "Volkov", "Solovyov", "Vasiliev",
+    "Zaytsev", "Pavlov", "Semyonov", "Golubev", "Vinogradov", "Bogdanov"
+]
+
+def generate_random_name():
+    """Генерирует случайное имя, фамилию и логин"""
+    first_name = random.choice(FIRST_NAMES)
+    last_name = random.choice(LAST_NAMES)
+    # Добавляем случайное число для уникальности
+    random_number = random.randint(1, 999)
+    login = f"{first_name.lower()}.{last_name.lower()}{random_number}"
+    return {
+        'first_name': first_name,
+        'last_name': last_name,
+        'login': login
+    }
 
 def get_messages(message):
     """Получение и отображение сообщений"""
@@ -86,19 +137,24 @@ def get_messages(message):
         
         try:
             response = requests.get(url, timeout=10)
+            response.raise_for_status()  # Проверяем статус ответа
             
-            if response.status_code == 404 or not response.text.strip():
+            if not response.text.strip():
                 bot.reply_to(message, "📭 У вас пока нет сообщений.")
+                bot.delete_message(message.chat.id, checking_msg.message_id)
                 return
 
             try:
                 data = json.loads(response.text)
+                if not isinstance(data, dict):
+                    raise ValueError("Неверный формат данных от сервера")
+                    
                 messages = data.get('messages', [])
-                
                 if not messages:
                     bot.reply_to(message, "📭 У вас пока нет сообщений.")
+                    bot.delete_message(message.chat.id, checking_msg.message_id)
                     return
-
+                    
                 # Инициализируем список прочитанных сообщений для пользователя, если его нет
                 if user_id not in user_read_messages:
                     user_read_messages[user_id] = set()
@@ -108,9 +164,11 @@ def get_messages(message):
                     msg_id = msg.get('id', '')
                     if msg_id:
                         user_read_messages[user_id].add(msg_id)
+                        # Обновляем статистику для новых сообщений
+                        update_stats(user_id, 'message_received')
 
                 format_type = user_message_format.get(user_id, 'full')
-                
+
                 for idx, msg in enumerate(messages, 1):
                     message_text = format_message(msg, format_type, idx, len(messages))
 
@@ -141,13 +199,22 @@ def get_messages(message):
                     pass
                     
             except json.JSONDecodeError as e:
-                bot.reply_to(message, "❌ Ошибка при разборе ответа сервера")
+                print(f"DEBUG - JSON Parse Error: {str(e)}, Response: {response.text}")
+                bot.reply_to(message, "❌ Ошибка при разборе ответа сервера. Возможно, почтовый сервис временно недоступен.")
+                bot.delete_message(message.chat.id, checking_msg.message_id)
                 
         except requests.exceptions.RequestException as e:
-            bot.reply_to(message, "❌ Ошибка при получении сообщений. Попробуйте позже.")
+            print(f"DEBUG - Request Error: {str(e)}")
+            bot.reply_to(message, "❌ Ошибка при получении сообщений. Сервер временно недоступен.")
+            bot.delete_message(message.chat.id, checking_msg.message_id)
             
     except Exception as e:
-        bot.reply_to(message, f"❌ Произошла ошибка: {str(e)}")
+        print(f"DEBUG - Unexpected Error: {str(e)}")
+        bot.reply_to(message, f"❌ Произошла неожиданная ошибка. Попробуйте позже.")
+        try:
+            bot.delete_message(message.chat.id, checking_msg.message_id)
+        except:
+            pass
 
 @bot.message_handler(commands=['help'])
 def help_command(message):
@@ -211,24 +278,81 @@ def help_command(message):
     bot.reply_to(message, help_text, parse_mode='Markdown')
 
 def update_stats(user_id, action):
-    """Обновление статистики пользователя"""
+    """Обновление статистики пользователя и глобальной статистики"""
+    # Обновление пользовательской статистики
     if user_id not in user_stats:
         user_stats[user_id] = {
             'emails_created': 0,
             'messages_checked': 0,
-            'codes_received': 0,
+            'messages_received': 0,
             'last_active': None
         }
     
     stats = user_stats[user_id]
     stats['last_active'] = time.strftime('%Y-%m-%d %H:%M:%S')
     
+    # Обновление глобальной статистики
+    bot_stats['total_users'].add(user_id)
+    
     if action == 'email_created':
         stats['emails_created'] += 1
+        bot_stats['total_emails_created'] += 1
+        bot_stats['active_emails'] = len(user_emails)
     elif action == 'messages_checked':
         stats['messages_checked'] += 1
-    elif action == 'code_received':
-        stats['codes_received'] += 1
+        bot_stats['total_checks'] += 1
+    elif action == 'message_received':
+        stats['messages_received'] += 1
+        bot_stats['total_messages_received'] += 1
+
+@bot.message_handler(commands=['stats'])
+def show_stats(message):
+    """Показывает статистику использования бота"""
+    if message.from_user.id not in ADMIN_IDS:
+        bot.reply_to(message, "❌ У вас нет прав для просмотра статистики.")
+        return
+
+    # Подсчет активных пользователей (использовали бота за последние 24 часа)
+    current_time = time.time()
+    active_users = sum(1 for stats in user_stats.values() 
+                      if stats['last_active'] and 
+                      time.mktime(time.strptime(stats['last_active'], '%Y-%m-%d %H:%M:%S')) > current_time - 86400)
+
+    # Формирование статистики
+    uptime = time.time() - bot_stats['start_time']
+    days = int(uptime // 86400)
+    hours = int((uptime % 86400) // 3600)
+    minutes = int((uptime % 3600) // 60)
+
+    stats_text = f"""
+📊 *Статистика бота NeuroMailBot*
+
+⏱ *Время работы:* {days}д {hours}ч {minutes}м
+
+👥 *Пользователи:*
+• Всего пользователей: {len(bot_stats['total_users'])}
+• Активных за 24ч: {active_users}
+
+📧 *Почтовые ящики:*
+• Создано всего: {bot_stats['total_emails_created']}
+• Активных сейчас: {bot_stats['active_emails']}
+
+📨 *Сообщения:*
+• Всего получено: {bot_stats['total_messages_received']}
+• Проверок почты: {bot_stats['total_checks']}
+
+🔝 *Топ пользователей:*
+"""
+
+    # Добавляем топ-5 пользователей по количеству созданных ящиков
+    top_users = sorted(user_stats.items(), 
+                      key=lambda x: x[1]['emails_created'], 
+                      reverse=True)[:5]
+    
+    for i, (user_id, stats) in enumerate(top_users, 1):
+        stats_text += f"{i}. ID: {user_id} - {stats['emails_created']} ящиков\n"
+
+    bot.reply_to(message, stats_text, parse_mode='Markdown')
 
 # Функция для форматирования email адреса
 def format_email(email):
@@ -242,7 +366,7 @@ def create_main_keyboard():
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.row(KeyboardButton("📧 Создать почту"))
     keyboard.row(KeyboardButton("📬 Проверить почту"), KeyboardButton("📋 Список писем"))
-    keyboard.row(KeyboardButton("❌ Удалить почту"))
+    keyboard.row(KeyboardButton("❌ Удалить почту"), KeyboardButton("👤 Генерация имени"))
     return keyboard
 
 def generate_password(length=12):
@@ -308,6 +432,7 @@ def send_welcome(message):
 
 @bot.message_handler(func=lambda message: message.text == "📧 Создать почту")
 def create_new_mail(message):
+    """Создание нового временного email адреса"""
     try:
         # Если есть активная почта, удаляем её
         user_id = message.from_user.id
@@ -318,7 +443,7 @@ def create_new_mail(message):
 
         print(f"DEBUG - Trying to create new email...")
         print(f"DEBUG - API URL: {GET_MAIL_URL}")
-        
+
         response = requests.get(GET_MAIL_URL)
         print(f"DEBUG - Response Status: {response.status_code}")
         print(f"DEBUG - Response Headers: {response.headers}")
@@ -340,6 +465,9 @@ def create_new_mail(message):
                     'expired_at': expired_at
                 }
                 
+                # Обновляем статистику
+                update_stats(message.from_user.id, 'email_created')
+                
                 # Запускаем автопроверку
                 start_checking(message)
                 
@@ -356,21 +484,19 @@ def create_new_mail(message):
             else:
                 print(f"DEBUG - Invalid response format. Status: {data.get('status')}, Mail: {data.get('mail')}")
                 bot.reply_to(message, "❌ Не удалось создать email. Попробуйте позже.",
-                            reply_markup=create_main_keyboard())
-                
+                           reply_markup=create_main_keyboard())
         except json.JSONDecodeError as e:
             print(f"DEBUG - JSON Parse Error: {str(e)}")
             bot.reply_to(message, "❌ Ошибка при разборе ответа сервера. Возможно, сервис временно недоступен.",
-                        reply_markup=create_main_keyboard())
-            
+                       reply_markup=create_main_keyboard())
     except requests.exceptions.RequestException as e:
         print(f"DEBUG - Request Error: {str(e)}")
         bot.reply_to(message, f"❌ Ошибка при подключении к серверу: {str(e)}",
-                    reply_markup=create_main_keyboard())
+                   reply_markup=create_main_keyboard())
     except Exception as e:
         print(f"DEBUG - Unexpected Error: {str(e)}")
         bot.reply_to(message, f"❌ Произошла неожиданная ошибка: {str(e)}",
-                    reply_markup=create_main_keyboard())
+                   reply_markup=create_main_keyboard())
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('del_'))
 def handle_message_actions(call):
@@ -442,6 +568,28 @@ def delete_mail(message):
 @bot.message_handler(func=lambda message: message.text == "ℹ️ Помощь")
 def help_button(message):
     help_command(message)
+
+@bot.message_handler(func=lambda message: message.text == "👤 Генерация имени")
+def generate_name_button(message):
+    """Обработчик кнопки генерации имени"""
+    try:
+        # Генерируем случайное имя
+        name_data = generate_random_name()
+        
+        # Формируем ответное сообщение
+        response_text = f"""
+👤 *Сгенерированные данные:*
+
+👨‍💼 *Имя:* `{name_data['first_name']}`
+👨‍👦 *Фамилия:* `{name_data['last_name']}`
+🆔 *Логин:* `{name_data['login']}`
+
+Вы можете использовать эти данные при регистрации на сайтах.
+Логин можно использовать как часть email адреса."""
+        
+        bot.reply_to(message, response_text, parse_mode='Markdown')
+    except Exception as e:
+        bot.reply_to(message, f"❌ Произошла ошибка при генерации имени: {str(e)}")
 
 # Обновляем обработчик для неизвестных команд
 @bot.message_handler(func=lambda message: True)
@@ -537,7 +685,6 @@ def check_messages_job(chat_id):
                                     user_read_messages[chat_id].add(msg_id)
                                 except Exception as e2:
                                     print(f"DEBUG - Error sending short message: {str(e2)}")
-                            
             except Exception as e:
                 print(f"DEBUG - Error in check_messages_job: {str(e)}")
     except Exception as e:
@@ -837,6 +984,169 @@ def show_full_message(call):
     except Exception as e:
         bot.answer_callback_query(call.id, "❌ Произошла ошибка")
         print(f"DEBUG - Error in show_full_message: {str(e)}")
+
+def cleanup_expired_emails():
+    """Очистка устаревших почтовых ящиков"""
+    current_time = time.time()
+    expired_users = []
+    
+    for user_id, email_data in user_emails.items():
+        if current_time > email_data.get('expired_at', 0):
+            expired_users.append(user_id)
+            
+            try:
+                # Останавливаем проверку для устаревшего ящика
+                if user_id in check_timers:
+                    del check_timers[user_id]
+                    
+                # Уведомляем пользователя
+                bot.send_message(
+                    user_id,
+                    "⚠️ Срок действия вашего почтового ящика истек.\nИспользуйте кнопку 📧 Создать почту для создания нового."
+                )
+            except Exception as e:
+                print(f"DEBUG - Error notifying user {user_id} about expired email: {str(e)}")
+    
+    # Удаляем устаревшие ящики
+    for user_id in expired_users:
+        del user_emails[user_id]
+        if user_id in user_read_messages:
+            del user_read_messages[user_id]
+
+# Запускаем периодическую очистку
+import threading
+def cleanup_loop():
+    while True:
+        try:
+            cleanup_expired_emails()
+        except Exception as e:
+            print(f"DEBUG - Error in cleanup loop: {str(e)}")
+        time.sleep(60)  # Проверяем каждую минуту
+
+cleanup_thread = threading.Thread(target=cleanup_loop)
+cleanup_thread.daemon = True
+cleanup_thread.start()
+
+@bot.message_handler(commands=['backup'])
+def backup_mailbox(message):
+    """Создание резервной копии почтового ящика"""
+    user_id = message.from_user.id
+    if user_id not in user_emails:
+        bot.reply_to(message, "❌ У вас нет активной почты для резервного копирования")
+        return
+        
+    try:
+        email_data = user_emails[user_id]
+        email = email_data['email']
+        url = f"{GET_MESSAGES_URL}?mail={email}"
+        
+        response = requests.get(url)
+        if response.status_code == 200 and response.text.strip():
+            data = json.loads(response.text)
+            messages = data.get('messages', [])
+            
+            if not messages:
+                bot.reply_to(message, "📭 Нет сообщений для резервного копирования")
+                return
+                
+            backup_text = f"📧 Резервная копия почтового ящика {email}\n"
+            backup_text += f"📅 Дата создания: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            
+            for idx, msg in enumerate(messages, 1):
+                backup_text += f"\n{'='*30}\n"
+                backup_text += f"📨 Сообщение {idx}/{len(messages)}\n"
+                backup_text += f"От: {msg.get('from', 'Неизвестно')}\n"
+                backup_text += f"Тема: {msg.get('subject', 'Без темы')}\n"
+                backup_text += f"Дата: {msg.get('date', 'Не указана')}\n"
+                backup_text += f"Текст:\n{msg.get('body', '')}\n"
+            
+            # Разбиваем на части, если текст слишком длинный
+            parts = split_long_message(backup_text)
+            for part in parts:
+                bot.send_message(message.chat.id, part)
+                
+            bot.reply_to(message, "✅ Резервная копия создана успешно!")
+            
+        else:
+            bot.reply_to(message, "❌ Не удалось получить данные для резервного копирования")
+            
+    except Exception as e:
+        print(f"DEBUG - Error creating backup: {str(e)}")
+        bot.reply_to(message, "❌ Произошла ошибка при создании резервной копии")
+
+@bot.message_handler(commands=['search'])
+def search_messages(message):
+    """Поиск по сообщениям"""
+    try:
+        args = message.text.split(maxsplit=1)
+        if len(args) < 2:
+            bot.reply_to(message, """
+❓ Используйте команду в формате:
+/search <текст для поиска>
+
+Например:
+/search код подтверждения
+/search password
+            """)
+            return
+            
+        user_id = message.from_user.id
+        if user_id not in user_emails:
+            bot.reply_to(message, "❌ У вас нет активной почты для поиска")
+            return
+            
+        search_text = args[1].lower()
+        email_data = user_emails[user_id]
+        email = email_data['email']
+        url = f"{GET_MESSAGES_URL}?mail={email}"
+        
+        searching_msg = bot.reply_to(message, "🔍 Выполняю поиск...")
+        
+        try:
+            response = requests.get(url)
+            if response.status_code == 200 and response.text.strip():
+                data = json.loads(response.text)
+                messages = data.get('messages', [])
+                
+                found_messages = []
+                for msg in messages:
+                    content = msg.get('body_html', '') or msg.get('body', '')
+                    subject = msg.get('subject', '')
+                    sender = msg.get('from', '')
+                    
+                    # Ищем во всех полях
+                    if (search_text in content.lower() or 
+                        search_text in subject.lower() or 
+                        search_text in sender.lower()):
+                        found_messages.append(msg)
+                
+                if not found_messages:
+                    bot.reply_to(message, f"❌ Сообщения содержащие '{search_text}' не найдены")
+                    return
+                    
+                bot.reply_to(message, f"✅ Найдено сообщений: {len(found_messages)}")
+                
+                # Отправляем найденные сообщения
+                for idx, msg in enumerate(found_messages, 1):
+                    message_text = format_message(msg, 'brief', idx, len(found_messages))
+                    bot.send_message(message.chat.id, message_text, parse_mode='Markdown')
+                    
+            else:
+                bot.reply_to(message, "❌ Не удалось получить сообщения для поиска")
+                
+        except Exception as e:
+            print(f"DEBUG - Error searching messages: {str(e)}")
+            bot.reply_to(message, "❌ Произошла ошибка при поиске")
+            
+        finally:
+            try:
+                bot.delete_message(message.chat.id, searching_msg.message_id)
+            except:
+                pass
+                
+    except Exception as e:
+        print(f"DEBUG - Error in search command: {str(e)}")
+        bot.reply_to(message, "❌ Произошла ошибка при выполнении поиска")
 
 # Запуск бота
 if __name__ == '__main__':
