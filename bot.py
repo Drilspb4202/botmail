@@ -28,8 +28,8 @@ GET_MESSAGES_URL = f"{BASE_URL}/see"
 GET_MESSAGE_CONTENT_URL = f"{BASE_URL}/message"
 CUSTOM_MAIL_URL = f"{BASE_URL}/custom"
 
-# Словарь для хранения email адресов пользователей
-user_emails = {}
+# Изменяем структуру хранения email адресов
+user_emails = {}  # user_id -> {email -> {email_data}}
 
 # Добавляем словарь для хранения таймеров проверки
 check_timers = {}
@@ -434,12 +434,11 @@ def send_welcome(message):
 def create_new_mail(message):
     """Создание нового временного email адреса"""
     try:
-        # Если есть активная почта, удаляем её
         user_id = message.from_user.id
-        if user_id in user_emails and user_id in check_timers:
-            stop_checking(message)
-        if user_id in user_emails:
-            del user_emails[user_id]
+        
+        # Инициализируем словарь для пользователя, если его еще нет
+        if user_id not in user_emails:
+            user_emails[user_id] = {}
 
         print(f"DEBUG - Trying to create new email...")
         print(f"DEBUG - API URL: {GET_MAIL_URL}")
@@ -460,17 +459,17 @@ def create_new_mail(message):
                 password = generate_password()
                 
                 # Сохраняем email, пароль и время истечения
-                user_emails[message.from_user.id] = {
+                user_emails[user_id][email] = {
                     'email': email,
                     'password': password,
                     'expired_at': expired_at
                 }
                 
                 # Обновляем статистику
-                update_stats(message.from_user.id, 'email_created')
+                update_stats(user_id, 'email_created')
                 
-                # Запускаем автопроверку
-                start_checking(message)
+                # Запускаем автопроверку для нового ящика
+                start_checking(message, email)
                 
                 response_text = f"""
 📧 Ваш новый временный email адрес:
@@ -481,7 +480,9 @@ def create_new_mail(message):
 
 ✅ Почта готова к приему писем
 ⏳ Срок действия: {time.strftime('%H:%M:%S %d.%m.%Y', time.localtime(expired_at))}
-♻️ Почта будет автоматически удалена через 24 часа"""
+♻️ Почта будет автоматически удалена через 24 часа
+
+📬 Используйте кнопку 📋 Список писем для просмотра всех ваших активных ящиков."""
                 bot.reply_to(message, response_text, parse_mode='Markdown')
             else:
                 print(f"DEBUG - Invalid response format. Status: {data.get('status')}, Mail: {data.get('mail')}")
@@ -491,10 +492,6 @@ def create_new_mail(message):
             print(f"DEBUG - JSON Parse Error: {str(e)}")
             bot.reply_to(message, "❌ Ошибка при разборе ответа сервера. Возможно, сервис временно недоступен.",
                        reply_markup=create_main_keyboard())
-    except requests.exceptions.RequestException as e:
-        print(f"DEBUG - Request Error: {str(e)}")
-        bot.reply_to(message, f"❌ Ошибка при подключении к серверу: {str(e)}",
-                   reply_markup=create_main_keyboard())
     except Exception as e:
         print(f"DEBUG - Unexpected Error: {str(e)}")
         bot.reply_to(message, f"❌ Произошла неожиданная ошибка: {str(e)}",
@@ -549,19 +546,26 @@ def list_messages(message):
     # Создаем клавиатуру для выбора почтового ящика
     keyboard = InlineKeyboardMarkup()
     
-    if user_id in user_emails:
-        email_data = user_emails[user_id]
-        email = email_data['email']
-        expired_at = email_data.get('expired_at', time.time() + EMAIL_LIFETIME)
-        remaining_time = int((expired_at - time.time()) / 3600)  # оставшееся время в часах
-        
-        # Добавляем кнопку для текущего активного ящика
-        keyboard.row(
-            InlineKeyboardButton(
-                f"📬 {email} (⏳ {remaining_time}ч)",
-                callback_data=f"show_mailbox_{email}"
-            )
+    if user_id in user_emails and user_emails[user_id]:
+        # Сортируем ящики по времени создания (сначала новые)
+        sorted_emails = sorted(
+            user_emails[user_id].items(),
+            key=lambda x: x[1]['expired_at'],
+            reverse=True
         )
+        
+        for email, email_data in sorted_emails:
+            expired_at = email_data['expired_at']
+            remaining_time = int((expired_at - time.time()) / 3600)  # оставшееся время в часах
+            
+            # Добавляем кнопку для каждого активного ящика
+            keyboard.row(
+                InlineKeyboardButton(
+                    f"📬 {email} (⏳ {remaining_time}ч)",
+                    callback_data=f"show_mailbox_{email}"
+                )
+            )
+        
         keyboard.row(
             InlineKeyboardButton("🔄 Обновить", callback_data="refresh_mailboxes")
         )
@@ -581,7 +585,7 @@ def show_mailbox_messages(call):
         email = call.data.replace('show_mailbox_', '')
         user_id = call.from_user.id
         
-        if user_id not in user_emails or user_emails[user_id]['email'] != email:
+        if user_id not in user_emails or email not in user_emails[user_id]:
             bot.answer_callback_query(call.id, "❌ Этот почтовый ящик больше не доступен")
             return
             
@@ -657,20 +661,57 @@ def refresh_mailboxes(call):
 
 @bot.message_handler(func=lambda message: message.text == "❌ Удалить почту")
 def delete_mail(message):
+    """Удаление почтового ящика"""
     user_id = message.from_user.id
-    if user_id in user_emails:
-        # Останавливаем проверку
-        if user_id in check_timers:
-            stop_checking(message)
+    if user_id in user_emails and user_emails[user_id]:
+        # Создаем клавиатуру для выбора ящика для удаления
+        keyboard = InlineKeyboardMarkup()
         
-        # Удаляем email и историю прочитанных сообщений
-        del user_emails[user_id]
-        if user_id in user_read_messages:
-            del user_read_messages[user_id]
-            
-        bot.reply_to(message, "✅ Почта успешно удалена!")
+        for email in user_emails[user_id].keys():
+            keyboard.row(
+                InlineKeyboardButton(
+                    f"🗑 {email}",
+                    callback_data=f"delete_mailbox_{email}"
+                )
+            )
+        
+        bot.reply_to(
+            message,
+            "🗑 Выберите почтовый ящик для удаления:",
+            reply_markup=keyboard
+        )
     else:
-        bot.reply_to(message, "❌ У вас нет активной почты.")
+        bot.reply_to(message, "❌ У вас нет активных почтовых ящиков.")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('delete_mailbox_'))
+def delete_mailbox(call):
+    """Удаление выбранного почтового ящика"""
+    try:
+        email = call.data.replace('delete_mailbox_', '')
+        user_id = call.from_user.id
+        
+        if user_id in user_emails and email in user_emails[user_id]:
+            # Останавливаем проверку
+            if user_id in check_timers and email in check_timers[user_id]:
+                stop_checking_email(user_id, email)
+            
+            # Удаляем email и историю прочитанных сообщений
+            del user_emails[user_id][email]
+            if user_id in user_read_messages and email in user_read_messages[user_id]:
+                del user_read_messages[user_id][email]
+            
+            # Если у пользователя не осталось ящиков, удаляем его запись
+            if not user_emails[user_id]:
+                del user_emails[user_id]
+            
+            bot.answer_callback_query(call.id, f"✅ Почтовый ящик {email} успешно удален!")
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+        else:
+            bot.answer_callback_query(call.id, "❌ Этот почтовый ящик уже недоступен")
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception as e:
+        print(f"DEBUG - Error in delete_mailbox: {str(e)}")
+        bot.answer_callback_query(call.id, "❌ Произошла ошибка при удалении")
 
 @bot.message_handler(func=lambda message: message.text == "ℹ️ Помощь")
 def help_button(message):
@@ -1095,41 +1136,46 @@ def show_full_message(call):
 def cleanup_expired_emails():
     """Очистка устаревших почтовых ящиков"""
     current_time = time.time()
-    expired_users = []
     
-    for user_id, email_data in user_emails.items():
-        # Получаем время истечения, если его нет - считаем почту устаревшей
-        expired_at = email_data.get('expired_at')
-        if expired_at is None or current_time > expired_at:
-            expired_users.append(user_id)
-            
-            try:
-                # Останавливаем проверку для устаревшего ящика
-                if user_id in check_timers:
-                    del check_timers[user_id]
-                    
-                # Уведомляем пользователя
-                remaining_minutes = int((expired_at - current_time) / 60) if expired_at else 0
-                if remaining_minutes > 0:
-                    notification_text = f"""
-⚠️ Внимание! Срок действия вашего почтового ящика истекает через {remaining_minutes} минут.
-📧 Email: `{email_data['email']}`
-🔄 Используйте кнопку 📧 Создать почту для создания нового ящика."""
-                else:
-                    notification_text = f"""
-⚠️ Срок действия вашего почтового ящика истек.
-📧 Email: `{email_data['email']}`
-🔄 Используйте кнопку 📧 Создать почту для создания нового."""
+    for user_id in list(user_emails.keys()):
+        expired_emails = []
+        
+        for email, email_data in user_emails[user_id].items():
+            expired_at = email_data.get('expired_at')
+            if expired_at is None or current_time > expired_at:
+                expired_emails.append(email)
                 
-                bot.send_message(user_id, notification_text, parse_mode='Markdown')
-            except Exception as e:
-                print(f"DEBUG - Error notifying user {user_id} about expired email: {str(e)}")
-    
-    # Удаляем устаревшие ящики
-    for user_id in expired_users:
-        del user_emails[user_id]
-        if user_id in user_read_messages:
-            del user_read_messages[user_id]
+                try:
+                    # Останавливаем проверку для устаревшего ящика
+                    if user_id in check_timers and email in check_timers[user_id]:
+                        stop_checking_email(user_id, email)
+                    
+                    # Уведомляем пользователя
+                    remaining_minutes = int((expired_at - current_time) / 60) if expired_at else 0
+                    if remaining_minutes > 0:
+                        notification_text = f"""
+⚠️ Внимание! Срок действия почтового ящика истекает через {remaining_minutes} минут.
+📧 Email: `{email}`
+🔄 Используйте кнопку 📧 Создать почту для создания нового ящика."""
+                    else:
+                        notification_text = f"""
+⚠️ Срок действия почтового ящика истек.
+📧 Email: `{email}`
+🔄 Используйте кнопку 📧 Создать почту для создания нового."""
+                    
+                    bot.send_message(user_id, notification_text, parse_mode='Markdown')
+                except Exception as e:
+                    print(f"DEBUG - Error notifying user {user_id} about expired email: {str(e)}")
+        
+        # Удаляем устаревшие ящики
+        for email in expired_emails:
+            del user_emails[user_id][email]
+            if user_id in user_read_messages and email in user_read_messages[user_id]:
+                del user_read_messages[user_id][email]
+        
+        # Если у пользователя не осталось ящиков, удаляем его запись
+        if not user_emails[user_id]:
+            del user_emails[user_id]
 
 # Запускаем периодическую очистку каждую минуту
 import threading
