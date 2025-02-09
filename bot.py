@@ -8,6 +8,7 @@ import re
 import random
 import string
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, Message
+import threading
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -1039,49 +1040,76 @@ def delete_message_handler(call):
 
 def format_message(msg, format_type='full', idx=None, total=None):
     """Форматирование сообщения в зависимости от выбранного формата"""
-    msg_content = msg.get('body_html', '') or msg.get('body', '')
-    msg_content = re.sub(r'<style.*?</style>', '', msg_content, flags=re.DOTALL)
-    msg_content = re.sub(r'<script.*?</script>', '', msg_content, flags=re.DOTALL)
-    
-    # Извлекаем ссылки перед удалением HTML
-    links = re.findall(r'href=[\'"]?([^\'" >]+)', msg_content)
-    buttons = re.findall(r'<button[^>]*>(.*?)</button>', msg_content, re.DOTALL)
-    
-    msg_content = re.sub(r'<[^>]+>', ' ', msg_content)
-    msg_content = re.sub(r'\s+', ' ', msg_content)
-    msg_content = msg_content.strip()
-    
-    msg_content = msg_content.replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
-    
-    from_field = msg.get('from', 'Неизвестно').replace('_', '\\_').replace('*', '\\*').replace('`', '\\`')
-    subject = msg.get('subject', 'Без темы').replace('_', '\\_').replace('*', '\\*').replace('`', '\\`')
-    
-    # Всегда показываем полное содержимое
-    message_text = f"""📨 {idx}/{total if total else '?'}
+    try:
+        # Получаем содержимое письма
+        msg_content = msg.get('body_html', '') or msg.get('body', '')
+        if not msg_content:
+            msg_content = "Текст письма отсутствует"
+            
+        # Очищаем HTML
+        msg_content = re.sub(r'<style.*?</style>', '', msg_content, flags=re.DOTALL)
+        msg_content = re.sub(r'<script.*?</script>', '', msg_content, flags=re.DOTALL)
+        
+        # Извлекаем ссылки и кнопки до удаления HTML
+        links = re.findall(r'href=[\'"]?([^\'" >]+)', msg_content)
+        buttons = re.findall(r'<button[^>]*>(.*?)</button>', msg_content, re.DOTALL)
+        
+        # Удаляем оставшиеся HTML теги
+        msg_content = re.sub(r'<[^>]+>', ' ', msg_content)
+        msg_content = re.sub(r'\s+', ' ', msg_content)
+        msg_content = msg_content.strip()
+        
+        # Безопасное получение данных
+        from_field = msg.get('from', 'Неизвестно')
+        subject = msg.get('subject', 'Без темы')
+        date = msg.get('date', 'Не указана')
+        
+        # Экранируем специальные символы Markdown
+        msg_content = msg_content.replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
+        from_field = from_field.replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
+        subject = subject.replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
+        
+        # Формируем базовое сообщение
+        message_text = f"""📨 {idx}/{total if total else '?'}
 От: {from_field}
 Тема: {subject}
-Дата: {msg.get('date', 'Не указана')}
+Дата: {date}
 
 📝 Текст письма:
 {msg_content}"""
 
-    if buttons:
-        message_text += "\n\n🔘 Кнопки в письме:"
-        for button in buttons:
-            message_text += f"\n• {button.strip()}"
+        # Добавляем кнопки, если есть
+        if buttons:
+            message_text += "\n\n🔘 Кнопки в письме:"
+            for button in buttons:
+                button_text = button.strip().replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
+                message_text += f"\n• {button_text}"
 
-    if links:
-        message_text += "\n\n🔗 Ссылки для входа:"
-        for link in links:
-            message_text += f"\n{link}"
+        # Добавляем ссылки, если есть
+        if links:
+            message_text += "\n\n🔗 Ссылки для входа:"
+            for link in links:
+                link_text = link.replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
+                message_text += f"\n{link_text}"
 
-    codes = re.findall(r'\b\d{4,8}\b', msg_content)
-    if codes:
-        message_text += "\n\n🔑 Коды:"
-        for code in codes:
-            message_text += f"\n`{code}`"
+        # Ищем коды
+        codes = re.findall(r'\b\d{4,8}\b', msg_content)
+        if codes:
+            message_text += "\n\n🔑 Коды:"
+            for code in codes:
+                message_text += f"\n`{code}`"
             
-    return message_text
+        return message_text
+        
+    except Exception as e:
+        print(f"DEBUG - Error in format_message: {str(e)}")
+        # Возвращаем безопасное сообщение в случае ошибки
+        return f"""📨 {idx}/{total if total else '?'}
+От: {msg.get('from', 'Неизвестно')}
+Тема: {msg.get('subject', 'Без темы')}
+Дата: {msg.get('date', 'Не указана')}
+
+❌ Ошибка при форматировании сообщения"""
 
 @bot.message_handler(commands=['format'])
 def change_format(message):
@@ -1164,29 +1192,16 @@ def cleanup_expired_emails():
                         notification_text = f"""
 ⚠️ Внимание! Срок действия почтового ящика истекает через {remaining_minutes} минут.
 📧 Email: `{email}`
-🔄 Используйте кнопку 📧 Создать почту для создания нового ящика."""
-                    else:
-                        notification_text = f"""
-⚠️ Срок действия почтового ящика истек.
-📧 Email: `{email}`
-🔄 Используйте кнопку 📧 Создать почту для создания нового."""
-                    
-                    bot.send_message(user_id, notification_text, parse_mode='Markdown')
+
+🔐 Пароль: `{email_data['password']}`
+
+⏳ Срок действия: {time.strftime('%H:%M:%S %d.%m.%Y', time.localtime(expired_at))}
+♻️ Почта будет автоматически удалена через {remaining_minutes} минут."""
+                        bot.send_message(user_id, notification_text, parse_mode='Markdown')
                 except Exception as e:
-                    print(f"DEBUG - Error notifying user {user_id} about expired email: {str(e)}")
-        
-        # Удаляем устаревшие ящики
-        for email in expired_emails:
-            del user_emails[user_id][email]
-            if user_id in user_read_messages and email in user_read_messages[user_id]:
-                del user_read_messages[user_id][email]
-        
-        # Если у пользователя не осталось ящиков, удаляем его запись
-        if not user_emails[user_id]:
-            del user_emails[user_id]
+                    print(f"DEBUG - Error sending notification: {str(e)}")
 
 # Запускаем периодическую очистку каждую минуту
-import threading
 def cleanup_loop():
     while True:
         try:
@@ -1323,4 +1338,4 @@ def search_messages(message):
 # Запуск бота
 if __name__ == '__main__':
     print("Бот запускается...")
-    bot.polling() 
+    bot.polling()
