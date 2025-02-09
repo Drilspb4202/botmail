@@ -172,10 +172,9 @@ def get_messages(message):
                 format_type = 'full'
 
                 for idx, msg in enumerate(messages, 1):
-                    message_text = format_message(msg, format_type, idx, len(messages))
+                    message_text, msg_keyboard = format_message(msg, format_type, idx, len(messages))
 
                     # Создаем клавиатуру для сообщения
-                    msg_keyboard = InlineKeyboardMarkup()
                     msg_keyboard.row(
                         InlineKeyboardButton("🗑 Удалить сообщение", callback_data=f"del_{idx}")
                     )
@@ -185,8 +184,8 @@ def get_messages(message):
                     except Exception as e:
                         print(f"DEBUG - Error sending message {idx}: {str(e)}")
                         try:
-                            short_message = format_message(msg, 'compact', idx, len(messages))
-                            bot.send_message(message.chat.id, short_message, reply_markup=msg_keyboard)
+                            short_message, short_keyboard = format_message(msg, 'compact', idx, len(messages))
+                            bot.send_message(message.chat.id, short_message, reply_markup=short_keyboard)
                         except Exception as e2:
                             print(f"DEBUG - Error sending short message {idx}: {str(e2)}")
 
@@ -608,10 +607,9 @@ def show_mailbox_messages(call):
                 format_type = user_message_format.get(user_id, 'full')
                 
                 for idx, msg in enumerate(messages, 1):
-                    message_text = format_message(msg, format_type, idx, len(messages))
+                    message_text, msg_keyboard = format_message(msg, format_type, idx, len(messages))
                     
                     # Создаем клавиатуру для сообщения
-                    msg_keyboard = InlineKeyboardMarkup()
                     msg_keyboard.row(
                         InlineKeyboardButton("🗑 Удалить сообщение", callback_data=f"del_{idx}")
                     )
@@ -798,14 +796,8 @@ def check_messages_job(chat_id, email):
                         if msg_id and msg_id not in user_read_messages[chat_id][email]:
                             # Всегда используем полный формат
                             format_type = 'full'
-                            message_text = format_message(msg, format_type, 1, 1)
+                            message_text, msg_keyboard = format_message(msg, format_type, 1, 1)
                             
-                            # Создаем клавиатуру
-                            msg_keyboard = InlineKeyboardMarkup()
-                            msg_keyboard.row(
-                                InlineKeyboardButton("🗑 Удалить", callback_data=f"del_1")
-                            )
-
                             try:
                                 # Отправляем сообщение
                                 bot.send_message(
@@ -820,12 +812,12 @@ def check_messages_job(chat_id, email):
                                 print(f"DEBUG - Error sending new message: {str(e)}")
                                 try:
                                     # Пробуем отправить короткую версию при ошибке
-                                    short_message = format_message(msg, 'compact', 1, 1)
+                                    short_message, short_keyboard = format_message(msg, 'compact', 1, 1)
                                     bot.send_message(
                                         chat_id,
                                         f"📬 *Новое сообщение в ящике* `{email}`:\n" + short_message,
                                         parse_mode='Markdown',
-                                        reply_markup=msg_keyboard
+                                        reply_markup=short_keyboard
                                     )
                                     user_read_messages[chat_id][email].add(msg_id)
                                 except Exception as e2:
@@ -1078,19 +1070,24 @@ def format_message(msg, format_type='full', idx=None, total=None):
 📝 Текст письма:
 {msg_content}"""
 
-        # Добавляем кнопки, если есть
+        # Создаем клавиатуру для сообщения
+        msg_keyboard = InlineKeyboardMarkup()
+
+        # Добавляем кнопки из HTML, если есть
         if buttons:
             message_text += "\n\n🔘 Кнопки в письме:"
             for button in buttons:
                 button_text = button.strip().replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
                 message_text += f"\n• {button_text}"
 
-        # Добавляем ссылки, если есть
+        # Добавляем ссылки как кнопки
         if links:
             message_text += "\n\n🔗 Ссылки для входа:"
-            for link in links:
-                link_text = link.replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
-                message_text += f"\n{link_text}"
+            for i, link in enumerate(links):
+                # Создаем короткое имя для кнопки
+                button_text = f"🔗 Ссылка {i+1}"
+                # Добавляем кнопку для каждой ссылки
+                msg_keyboard.add(InlineKeyboardButton(text=button_text, url=link))
 
         # Ищем коды
         codes = re.findall(r'\b\d{4,8}\b', msg_content)
@@ -1098,18 +1095,22 @@ def format_message(msg, format_type='full', idx=None, total=None):
             message_text += "\n\n🔑 Коды:"
             for code in codes:
                 message_text += f"\n`{code}`"
+
+        # Добавляем кнопку удаления
+        msg_keyboard.add(InlineKeyboardButton("🗑 Удалить сообщение", callback_data=f"del_{idx}"))
             
-        return message_text
+        return message_text, msg_keyboard
         
     except Exception as e:
         print(f"DEBUG - Error in format_message: {str(e)}")
         # Возвращаем безопасное сообщение в случае ошибки
-        return f"""📨 {idx}/{total if total else '?'}
+        error_text = f"""📨 {idx}/{total if total else '?'}
 От: {msg.get('from', 'Неизвестно')}
 Тема: {msg.get('subject', 'Без темы')}
 Дата: {msg.get('date', 'Не указана')}
 
 ❌ Ошибка при форматировании сообщения"""
+        return error_text, InlineKeyboardMarkup()
 
 @bot.message_handler(commands=['format'])
 def change_format(message):
@@ -1160,10 +1161,10 @@ def show_full_message(call):
             return
             
         message = messages[idx]
-        message_text = format_message(message, 'full', idx + 1, len(messages))
+        message_text, msg_keyboard = format_message(message, 'full', idx + 1, len(messages))
         
         bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, message_text, parse_mode='Markdown')
+        bot.send_message(call.message.chat.id, message_text, parse_mode='Markdown', reply_markup=msg_keyboard)
                 
     except Exception as e:
         bot.answer_callback_query(call.id, "❌ Произошла ошибка")
@@ -1315,8 +1316,8 @@ def search_messages(message):
                 
                 # Отправляем найденные сообщения
                 for idx, msg in enumerate(found_messages, 1):
-                    message_text = format_message(msg, 'brief', idx, len(found_messages))
-                    bot.send_message(message.chat.id, message_text, parse_mode='Markdown')
+                    message_text, msg_keyboard = format_message(msg, 'brief', idx, len(found_messages))
+                    bot.send_message(message.chat.id, message_text, parse_mode='Markdown', reply_markup=msg_keyboard)
                     
             else:
                 bot.reply_to(message, "❌ Не удалось получить сообщения для поиска")
