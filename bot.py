@@ -167,7 +167,8 @@ def get_messages(message):
                         # Обновляем статистику для новых сообщений
                         update_stats(user_id, 'message_received')
 
-                format_type = user_message_format.get(user_id, 'full')
+                # Всегда используем полный формат
+                format_type = 'full'
 
                 for idx, msg in enumerate(messages, 1):
                     message_text = format_message(msg, format_type, idx, len(messages))
@@ -177,11 +178,6 @@ def get_messages(message):
                     msg_keyboard.row(
                         InlineKeyboardButton("🗑 Удалить сообщение", callback_data=f"del_{idx}")
                     )
-                    
-                    if format_type != 'full':
-                        msg_keyboard.row(
-                            InlineKeyboardButton("📋 Показать полностью", callback_data=f"show_full_{idx}")
-                        )
 
                     try:
                         bot.send_message(message.chat.id, message_text, parse_mode='Markdown', reply_markup=msg_keyboard)
@@ -799,8 +795,8 @@ def check_messages_job(chat_id, email):
                     for msg in messages:
                         msg_id = msg.get('id', '')
                         if msg_id and msg_id not in user_read_messages[chat_id][email]:
-                            # Форматируем и отправляем новое сообщение
-                            format_type = user_message_format.get(chat_id, 'full')
+                            # Всегда используем полный формат
+                            format_type = 'full'
                             message_text = format_message(msg, format_type, 1, 1)
                             
                             # Создаем клавиатуру
