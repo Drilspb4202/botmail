@@ -78,7 +78,7 @@ bot_stats = {
 user_stats = {}
 
 # Константы для времени жизни почты
-EMAIL_LIFETIME = 3600  # 1 час по умолчанию
+EMAIL_LIFETIME = 86400  # 24 часа
 EMAIL_CHECK_INTERVAL = 15  # Проверка каждые 15 секунд
 
 # Списки для генерации имен
@@ -543,10 +543,115 @@ def check_mail_button(message):
 def list_messages(message):
     """Обработчик кнопки списка писем"""
     user_id = message.from_user.id
-    if user_id not in user_emails:
-        bot.reply_to(message, "❌ У вас нет активной почты. Создайте новый с помощью кнопки 📧 Создать почту")
-        return
-    get_messages(message)
+    
+    # Создаем клавиатуру для выбора почтового ящика
+    keyboard = InlineKeyboardMarkup()
+    
+    if user_id in user_emails:
+        email_data = user_emails[user_id]
+        email = email_data['email']
+        expired_at = email_data.get('expired_at', time.time() + EMAIL_LIFETIME)
+        remaining_time = int((expired_at - time.time()) / 3600)  # оставшееся время в часах
+        
+        # Добавляем кнопку для текущего активного ящика
+        keyboard.row(
+            InlineKeyboardButton(
+                f"📬 {email} (⏳ {remaining_time}ч)",
+                callback_data=f"show_mailbox_{email}"
+            )
+        )
+        keyboard.row(
+            InlineKeyboardButton("🔄 Обновить", callback_data="refresh_mailboxes")
+        )
+        
+        bot.reply_to(
+            message,
+            "📬 Выберите почтовый ящик для просмотра сообщений:",
+            reply_markup=keyboard
+        )
+    else:
+        bot.reply_to(message, "❌ У вас нет активных почтовых ящиков. Создайте новый с помощью кнопки 📧 Создать почту")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('show_mailbox_'))
+def show_mailbox_messages(call):
+    """Показывает сообщения выбранного почтового ящика"""
+    try:
+        email = call.data.replace('show_mailbox_', '')
+        user_id = call.from_user.id
+        
+        if user_id not in user_emails or user_emails[user_id]['email'] != email:
+            bot.answer_callback_query(call.id, "❌ Этот почтовый ящик больше не доступен")
+            return
+            
+        checking_msg = bot.send_message(call.message.chat.id, "⏳ Проверяю сообщения...")
+        
+        url = f"{GET_MESSAGES_URL}?mail={email}"
+        try:
+            response = requests.get(url)
+            if response.status_code == 200 and response.text.strip():
+                data = json.loads(response.text)
+                messages = data.get('messages', [])
+                
+                if not messages:
+                    bot.send_message(call.message.chat.id, f"📭 В ящике {email} пока нет сообщений")
+                    bot.delete_message(call.message.chat.id, checking_msg.message_id)
+                    return
+                    
+                bot.send_message(
+                    call.message.chat.id,
+                    f"📬 Сообщения в ящике {email}:"
+                )
+                
+                format_type = user_message_format.get(user_id, 'full')
+                
+                for idx, msg in enumerate(messages, 1):
+                    message_text = format_message(msg, format_type, idx, len(messages))
+                    
+                    # Создаем клавиатуру для сообщения
+                    msg_keyboard = InlineKeyboardMarkup()
+                    msg_keyboard.row(
+                        InlineKeyboardButton("🗑 Удалить сообщение", callback_data=f"del_{idx}")
+                    )
+                    
+                    if format_type != 'full':
+                        msg_keyboard.row(
+                            InlineKeyboardButton("📋 Показать полностью", callback_data=f"show_full_{idx}")
+                        )
+                    
+                    bot.send_message(
+                        call.message.chat.id,
+                        message_text,
+                        parse_mode='Markdown',
+                        reply_markup=msg_keyboard
+                    )
+            else:
+                bot.send_message(call.message.chat.id, "❌ Не удалось получить сообщения")
+                
+        except Exception as e:
+            print(f"DEBUG - Error getting messages: {str(e)}")
+            bot.send_message(call.message.chat.id, "❌ Произошла ошибка при получении сообщений")
+            
+        finally:
+            try:
+                bot.delete_message(call.message.chat.id, checking_msg.message_id)
+            except:
+                pass
+                
+    except Exception as e:
+        print(f"DEBUG - Error in show_mailbox_messages: {str(e)}")
+        bot.answer_callback_query(call.id, "❌ Произошла ошибка")
+
+@bot.callback_query_handler(func=lambda call: call.data == "refresh_mailboxes")
+def refresh_mailboxes(call):
+    """Обновляет список почтовых ящиков"""
+    try:
+        message = call.message
+        message.from_user = call.from_user
+        list_messages(message)
+        bot.answer_callback_query(call.id, "✅ Список обновлен")
+    except Exception as e:
+        print(f"DEBUG - Error refreshing mailboxes: {str(e)}")
+        bot.answer_callback_query(call.id, "❌ Ошибка при обновлении")
 
 @bot.message_handler(func=lambda message: message.text == "❌ Удалить почту")
 def delete_mail(message):
