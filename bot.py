@@ -132,8 +132,9 @@ def get_messages(message):
         
         checking_msg = bot.reply_to(message, "⏳ Проверяю сообщения...")
         
-        email_data = user_emails[user_id]
-        email = email_data['email']
+        # Получаем первый email из словаря пользователя
+        email = next(iter(user_emails[user_id].keys()))
+        email_data = user_emails[user_id][email]
         url = f"{GET_MESSAGES_URL}?mail={email}"
         
         try:
@@ -156,7 +157,7 @@ def get_messages(message):
                     bot.delete_message(message.chat.id, checking_msg.message_id)
                     return
                     
-                # Инициализируем список прочитанных сообщений для пользователя, если его нет
+                # Инициализируем множество прочитанных сообщений для пользователя, если его нет
                 if user_id not in user_read_messages:
                     user_read_messages[user_id] = set()
 
