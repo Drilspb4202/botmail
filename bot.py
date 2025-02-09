@@ -455,7 +455,8 @@ def create_new_mail(message):
             
             if data.get('status') == 'ok' and data.get('mail'):
                 email = data['mail']
-                expired_at = data.get('expired_at', time.time() + EMAIL_LIFETIME)
+                # Всегда устанавливаем время истечения на 24 часа от текущего момента
+                expired_at = time.time() + EMAIL_LIFETIME
                 password = generate_password()
                 
                 # Сохраняем email, пароль и время истечения
@@ -479,7 +480,8 @@ def create_new_mail(message):
 `{password}`
 
 ✅ Почта готова к приему писем
-⏳ Срок действия: {time.strftime('%H:%M:%S %d.%m.%Y', time.localtime(expired_at))}"""
+⏳ Срок действия: {time.strftime('%H:%M:%S %d.%m.%Y', time.localtime(expired_at))}
+♻️ Почта будет автоматически удалена через 24 часа"""
                 bot.reply_to(message, response_text, parse_mode='Markdown')
             else:
                 print(f"DEBUG - Invalid response format. Status: {data.get('status')}, Mail: {data.get('mail')}")
@@ -1096,7 +1098,9 @@ def cleanup_expired_emails():
     expired_users = []
     
     for user_id, email_data in user_emails.items():
-        if current_time > email_data.get('expired_at', 0):
+        # Получаем время истечения, если его нет - считаем почту устаревшей
+        expired_at = email_data.get('expired_at')
+        if expired_at is None or current_time > expired_at:
             expired_users.append(user_id)
             
             try:
@@ -1105,10 +1109,19 @@ def cleanup_expired_emails():
                     del check_timers[user_id]
                     
                 # Уведомляем пользователя
-                bot.send_message(
-                    user_id,
-                    "⚠️ Срок действия вашего почтового ящика истек.\nИспользуйте кнопку 📧 Создать почту для создания нового."
-                )
+                remaining_minutes = int((expired_at - current_time) / 60) if expired_at else 0
+                if remaining_minutes > 0:
+                    notification_text = f"""
+⚠️ Внимание! Срок действия вашего почтового ящика истекает через {remaining_minutes} минут.
+📧 Email: `{email_data['email']}`
+🔄 Используйте кнопку 📧 Создать почту для создания нового ящика."""
+                else:
+                    notification_text = f"""
+⚠️ Срок действия вашего почтового ящика истек.
+📧 Email: `{email_data['email']}`
+🔄 Используйте кнопку 📧 Создать почту для создания нового."""
+                
+                bot.send_message(user_id, notification_text, parse_mode='Markdown')
             except Exception as e:
                 print(f"DEBUG - Error notifying user {user_id} about expired email: {str(e)}")
     
@@ -1118,7 +1131,7 @@ def cleanup_expired_emails():
         if user_id in user_read_messages:
             del user_read_messages[user_id]
 
-# Запускаем периодическую очистку
+# Запускаем периодическую очистку каждую минуту
 import threading
 def cleanup_loop():
     while True:
