@@ -124,81 +124,90 @@ def get_messages(message):
     """Получение и отображение сообщений"""
     try:
         user_id = message.from_user.id
+        print(f"DEBUG - Checking messages for user {user_id}")
+        
         if user_id not in user_emails:
+            print(f"DEBUG - No active emails for user {user_id}")
             bot.reply_to(message, "❌ У вас нет активной почты. Создайте новую с помощью кнопки 📧 Создать почту")
             return
 
-        update_stats(user_id, 'messages_checked')
-        
         checking_msg = bot.reply_to(message, "⏳ Проверяю сообщения...")
         
-        # Получаем первый email из словаря пользователя
-        email = next(iter(user_emails[user_id].keys()))
-        email_data = user_emails[user_id][email]
-        url = f"{GET_MESSAGES_URL}?mail={email}"
-        
         try:
+            # Получаем первый email из словаря пользователя
+            if not user_emails[user_id]:
+                print(f"DEBUG - Empty email dictionary for user {user_id}")
+                bot.reply_to(message, "❌ У вас нет активной почты. Создайте новую с помощью кнопки 📧 Создать почту")
+                bot.delete_message(message.chat.id, checking_msg.message_id)
+                return
+                
+            email = next(iter(user_emails[user_id].keys()))
+            email_data = user_emails[user_id][email]
+            print(f"DEBUG - Checking email: {email}")
+            
+            url = f"{GET_MESSAGES_URL}?mail={email}"
+            print(f"DEBUG - Request URL: {url}")
+            
             response = requests.get(url, timeout=10)
-            response.raise_for_status()  # Проверяем статус ответа
+            print(f"DEBUG - Response status: {response.status_code}")
+            print(f"DEBUG - Response text: {response.text}")
+            
+            response.raise_for_status()
             
             if not response.text.strip():
                 bot.reply_to(message, "📭 У вас пока нет сообщений.")
                 bot.delete_message(message.chat.id, checking_msg.message_id)
                 return
 
-            try:
-                data = json.loads(response.text)
-                if not isinstance(data, dict):
-                    raise ValueError("Неверный формат данных от сервера")
-                    
-                messages = data.get('messages', [])
-                if not messages:
-                    bot.reply_to(message, "📭 У вас пока нет сообщений.")
-                    bot.delete_message(message.chat.id, checking_msg.message_id)
-                    return
-                    
-                # Инициализируем множество прочитанных сообщений для пользователя, если его нет
-                if user_id not in user_read_messages:
-                    user_read_messages[user_id] = set()
+            data = json.loads(response.text)
+            if not isinstance(data, dict):
+                print(f"DEBUG - Invalid response format: {data}")
+                raise ValueError("Неверный формат данных от сервера")
+                
+            messages = data.get('messages', [])
+            print(f"DEBUG - Found {len(messages)} messages")
+            
+            if not messages:
+                bot.reply_to(message, "📭 У вас пока нет сообщений.")
+                bot.delete_message(message.chat.id, checking_msg.message_id)
+                return
+                
+            # Инициализируем множество прочитанных сообщений для пользователя
+            if user_id not in user_read_messages:
+                user_read_messages[user_id] = set()
 
-                # Отмечаем все сообщения как прочитанные
-                for msg in messages:
-                    msg_id = msg.get('id', '')
-                    if msg_id:
-                        user_read_messages[user_id].add(msg_id)
-                        # Обновляем статистику для новых сообщений
-                        update_stats(user_id, 'message_received')
+            # Отмечаем все сообщения как прочитанные
+            for msg in messages:
+                msg_id = msg.get('id', '')
+                if msg_id:
+                    user_read_messages[user_id].add(msg_id)
+                    update_stats(user_id, 'message_received')
 
-                # Всегда используем полный формат
-                format_type = 'full'
+            # Всегда используем полный формат
+            format_type = 'full'
 
-                for idx, msg in enumerate(messages, 1):
-                    message_text, msg_keyboard = format_message(msg, format_type, idx, len(messages))
-
-                    # Создаем клавиатуру для сообщения
-                    msg_keyboard.row(
-                        InlineKeyboardButton("🗑 Удалить сообщение", callback_data=f"del_{idx}")
-                    )
-
-                    try:
-                        bot.send_message(message.chat.id, message_text, parse_mode='Markdown', reply_markup=msg_keyboard)
-                    except Exception as e:
-                        print(f"DEBUG - Error sending message {idx}: {str(e)}")
-                        try:
-                            short_message, short_keyboard = format_message(msg, 'compact', idx, len(messages))
-                            bot.send_message(message.chat.id, short_message, reply_markup=short_keyboard)
-                        except Exception as e2:
-                            print(f"DEBUG - Error sending short message {idx}: {str(e2)}")
+            for idx, msg in enumerate(messages, 1):
+                message_text, msg_keyboard = format_message(msg, format_type, idx, len(messages))
+                msg_keyboard.row(
+                    InlineKeyboardButton("🗑 Удалить сообщение", callback_data=f"del_{idx}")
+                )
 
                 try:
-                    bot.delete_message(message.chat.id, checking_msg.message_id)
-                except:
-                    pass
-                    
-            except json.JSONDecodeError as e:
-                print(f"DEBUG - JSON Parse Error: {str(e)}, Response: {response.text}")
-                bot.reply_to(message, "❌ Ошибка при разборе ответа сервера. Возможно, почтовый сервис временно недоступен.")
-                bot.delete_message(message.chat.id, checking_msg.message_id)
+                    bot.send_message(message.chat.id, message_text, parse_mode='Markdown', reply_markup=msg_keyboard)
+                except Exception as e:
+                    print(f"DEBUG - Error sending message {idx}: {str(e)}")
+                    try:
+                        short_message, short_keyboard = format_message(msg, 'compact', idx, len(messages))
+                        bot.send_message(message.chat.id, short_message, reply_markup=short_keyboard)
+                    except Exception as e2:
+                        print(f"DEBUG - Error sending short message {idx}: {str(e2)}")
+
+            bot.delete_message(message.chat.id, checking_msg.message_id)
+                
+        except json.JSONDecodeError as e:
+            print(f"DEBUG - JSON Parse Error: {str(e)}, Response: {response.text}")
+            bot.reply_to(message, "❌ Ошибка при разборе ответа сервера. Возможно, почтовый сервис временно недоступен.")
+            bot.delete_message(message.chat.id, checking_msg.message_id)
                 
         except requests.exceptions.RequestException as e:
             print(f"DEBUG - Request Error: {str(e)}")
@@ -207,7 +216,8 @@ def get_messages(message):
             
     except Exception as e:
         print(f"DEBUG - Unexpected Error: {str(e)}")
-        bot.reply_to(message, f"❌ Произошла неожиданная ошибка. Попробуйте позже.")
+        print(f"DEBUG - User emails state: {user_emails.get(message.from_user.id, 'No emails')}")
+        bot.reply_to(message, "❌ Ошибка при проверке почты. Попробуйте создать новый ящик.")
         try:
             bot.delete_message(message.chat.id, checking_msg.message_id)
         except:
@@ -1379,4 +1389,19 @@ def search_messages(message):
 # Запуск бота
 if __name__ == '__main__':
     print("Бот запускается...")
-    bot.polling()
+    while True:
+        try:
+            print("Подключение к Telegram API...")
+            bot.polling(none_stop=True, interval=1, timeout=60)
+        except requests.exceptions.ConnectionError as e:
+            print(f"Ошибка соединения: {e}")
+            print("Переподключение через 10 секунд...")
+            time.sleep(10)
+        except requests.exceptions.ReadTimeout as e:
+            print(f"Таймаут соединения: {e}")
+            print("Переподключение через 5 секунд...")
+            time.sleep(5)
+        except Exception as e:
+            print(f"Критическая ошибка: {e}")
+            print("Перезапуск через 10 секунд...")
+            time.sleep(10)
