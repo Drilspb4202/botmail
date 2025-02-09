@@ -316,27 +316,34 @@ def create_new_mail(message):
         if user_id in user_emails:
             del user_emails[user_id]
 
-        response = requests.get(GET_MAIL_URL)
-        print(f"DEBUG - New Mail URL: {GET_MAIL_URL}")
-        print(f"DEBUG - Response Status: {response.status_code}")
+        print(f"DEBUG - Trying to create new email...")
+        print(f"DEBUG - API URL: {GET_MAIL_URL}")
         
-        data = json.loads(response.text)
-        if data.get('status') == 'ok' and data.get('mail'):
-            email = data['mail']
-            expired_at = data.get('expired_at', time.time() + EMAIL_LIFETIME)
-            password = generate_password()
+        response = requests.get(GET_MAIL_URL)
+        print(f"DEBUG - Response Status: {response.status_code}")
+        print(f"DEBUG - Response Headers: {response.headers}")
+        print(f"DEBUG - Response Text: {response.text}")
+        
+        try:
+            data = json.loads(response.text)
+            print(f"DEBUG - Parsed JSON: {data}")
             
-            # Сохраняем email, пароль и время истечения
-            user_emails[message.from_user.id] = {
-                'email': email,
-                'password': password,
-                'expired_at': expired_at
-            }
-            
-            # Запускаем автопроверку
-            start_checking(message)
-            
-            response_text = f"""
+            if data.get('status') == 'ok' and data.get('mail'):
+                email = data['mail']
+                expired_at = data.get('expired_at', time.time() + EMAIL_LIFETIME)
+                password = generate_password()
+                
+                # Сохраняем email, пароль и время истечения
+                user_emails[message.from_user.id] = {
+                    'email': email,
+                    'password': password,
+                    'expired_at': expired_at
+                }
+                
+                # Запускаем автопроверку
+                start_checking(message)
+                
+                response_text = f"""
 📧 Ваш новый временный email адрес:
 `{email}`
 
@@ -345,14 +352,24 @@ def create_new_mail(message):
 
 ✅ Почта готова к приему писем
 ⏳ Срок действия: {time.strftime('%H:%M:%S %d.%m.%Y', time.localtime(expired_at))}"""
-            bot.reply_to(message, response_text, parse_mode='Markdown')
-        else:
-            bot.reply_to(message, "❌ Не удалось создать email. Попробуйте позже.",
+                bot.reply_to(message, response_text, parse_mode='Markdown')
+            else:
+                print(f"DEBUG - Invalid response format. Status: {data.get('status')}, Mail: {data.get('mail')}")
+                bot.reply_to(message, "❌ Не удалось создать email. Попробуйте позже.",
+                            reply_markup=create_main_keyboard())
+                
+        except json.JSONDecodeError as e:
+            print(f"DEBUG - JSON Parse Error: {str(e)}")
+            bot.reply_to(message, "❌ Ошибка при разборе ответа сервера. Возможно, сервис временно недоступен.",
                         reply_markup=create_main_keyboard())
             
+    except requests.exceptions.RequestException as e:
+        print(f"DEBUG - Request Error: {str(e)}")
+        bot.reply_to(message, f"❌ Ошибка при подключении к серверу: {str(e)}",
+                    reply_markup=create_main_keyboard())
     except Exception as e:
-        print(f"DEBUG - Error: {str(e)}")
-        bot.reply_to(message, f"❌ Произошла ошибка: {str(e)}",
+        print(f"DEBUG - Unexpected Error: {str(e)}")
+        bot.reply_to(message, f"❌ Произошла неожиданная ошибка: {str(e)}",
                     reply_markup=create_main_keyboard())
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('del_'))
