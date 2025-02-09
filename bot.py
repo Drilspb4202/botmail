@@ -1034,7 +1034,6 @@ def delete_message_handler(call):
         bot.answer_callback_query(call.id, "❌ Ошибка при удалении сообщения")
 
 def format_message(msg, format_type='full', idx=None, total=None):
-    """Форматирование сообщения в зависимости от выбранного формата"""
     try:
         # Получаем содержимое письма
         msg_content = msg.get('body_html', '') or msg.get('body', '')
@@ -1092,11 +1091,49 @@ def format_message(msg, format_type='full', idx=None, total=None):
                 # Добавляем кнопку для каждой ссылки
                 msg_keyboard.add(InlineKeyboardButton(text=button_text, url=link))
 
-        # Ищем коды
-        codes = re.findall(r'\b\d{4,8}\b', msg_content)
-        if codes:
-            message_text += "\n\n🔑 Коды:"
-            for code in codes:
+        # Улучшенный поиск кодов верификации
+        verification_codes = []
+        
+        # Паттерны для поиска кодов
+        code_patterns = [
+            # Основной паттерн для кодов из 6 символов (буквы и цифры)
+            r'(?<![a-zA-Z0-9])[A-Z0-9]{6}(?![a-zA-Z0-9])',
+            # Поиск кодов после ключевых слов
+            r'(?:code|код|verify|token)[:\s]+([A-Z0-9]{4,8})',
+            # Поиск кодов в начале строки
+            r'(?m)^[A-Z0-9]{6}(?:\s|$)',
+            # Поиск кодов в конце предложения
+            r'[A-Z0-9]{6}(?:[.!?]|\s|$)',
+            # Поиск кодов в скобках
+            r'\(([A-Z0-9]{6})\)',
+            r'\[([A-Z0-9]{6})\]'
+        ]
+        
+        # Применяем каждый паттерн
+        for pattern in code_patterns:
+            matches = re.finditer(pattern, msg_content, re.MULTILINE)
+            for match in matches:
+                code = match.group(1) if len(match.groups()) > 0 else match.group(0)
+                if code and len(code) >= 4:  # Проверяем минимальную длину
+                    verification_codes.append(code)
+        
+        # Фильтруем найденные коды
+        filtered_codes = []
+        for code in verification_codes:
+            code = code.strip()
+            # Проверяем, что код не является частью ссылки или email
+            if (not any(code in link for link in links) and 
+                '@' not in code and 
+                not any(word in code.lower() for word in ['http', 'www']) and
+                not re.match(r'^\d{5}$', code)):  # исключаем почтовые индексы
+                filtered_codes.append(code)
+        
+        # Удаляем дубликаты и сортируем
+        filtered_codes = sorted(set(filtered_codes))
+        
+        if filtered_codes:
+            message_text += "\n\n🔑 Коды подтверждения:"
+            for code in filtered_codes:
                 message_text += f"\n`{code}`"
 
         # Добавляем кнопку удаления
