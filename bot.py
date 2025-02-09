@@ -432,10 +432,6 @@ def create_new_mail(message):
     try:
         user_id = message.from_user.id
         
-        # Инициализируем словарь для пользователя, если его еще нет
-        if user_id not in user_emails:
-            user_emails[user_id] = {}
-
         print(f"DEBUG - Trying to create new email...")
         print(f"DEBUG - API URL: {GET_MAIL_URL}")
 
@@ -454,11 +450,17 @@ def create_new_mail(message):
                 expired_at = time.time() + EMAIL_LIFETIME
                 password = generate_password()
                 
-                # Сохраняем email, пароль и время истечения
-                user_emails[user_id][email] = {
-                    'email': email,
-                    'password': password,
-                    'expired_at': expired_at
+                # Инициализируем словарь для пользователя, если его еще нет
+                if user_id not in user_emails:
+                    user_emails[user_id] = {}
+                
+                # Сохраняем email данные
+                user_emails[user_id] = {
+                    email: {
+                        'email': email,
+                        'password': password,
+                        'expired_at': expired_at
+                    }
                 }
                 
                 # Обновляем статистику
