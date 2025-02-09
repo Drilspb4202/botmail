@@ -1046,6 +1046,11 @@ def format_message(msg, format_type='full', idx=None, total=None):
     msg_content = msg.get('body_html', '') or msg.get('body', '')
     msg_content = re.sub(r'<style.*?</style>', '', msg_content, flags=re.DOTALL)
     msg_content = re.sub(r'<script.*?</script>', '', msg_content, flags=re.DOTALL)
+    
+    # Извлекаем ссылки перед удалением HTML
+    links = re.findall(r'href=[\'"]?([^\'" >]+)', msg_content)
+    buttons = re.findall(r'<button[^>]*>(.*?)</button>', msg_content, re.DOTALL)
+    
     msg_content = re.sub(r'<[^>]+>', ' ', msg_content)
     msg_content = re.sub(r'\s+', ' ', msg_content)
     msg_content = msg_content.strip()
@@ -1061,12 +1066,19 @@ def format_message(msg, format_type='full', idx=None, total=None):
 Тема: {subject}"""
     
     elif format_type == 'brief':
-        return f"""📨 {idx}/{total if total else '?'}
+        message_text = f"""📨 {idx}/{total if total else '?'}
 От: {from_field}
 Тема: {subject}
 Дата: {msg.get('date', 'Не указана')}
 
 📝 {msg_content[:100]}{"..." if len(msg_content) > 100 else ""}"""
+
+        if links:
+            message_text += "\n\n🔗 Ссылки для входа:"
+            for link in links[:3]:
+                message_text += f"\n{link}"
+        
+        return message_text
     
     else:  # full
         message_text = f"""📨 {idx}/{total if total else '?'}
@@ -1077,16 +1089,19 @@ def format_message(msg, format_type='full', idx=None, total=None):
 📝 Текст:
 {msg_content[:300]}{"..." if len(msg_content) > 300 else ""}"""
 
-        links = re.findall(r'https?://[^\s<>"]+|www\.[^\s<>"]+', msg_content)
-        codes = re.findall(r'\b\d{4,8}\b', msg_content)
-        
+        if buttons:
+            message_text += "\n\n🔘 Кнопки в письме:"
+            for button in buttons[:3]:
+                message_text += f"\n• {button.strip()}"
+
         if links:
-            message_text += "\n\n🔗 Ссылки:"
+            message_text += "\n\n🔗 Ссылки для входа:"
             for link in links[:3]:
                 message_text += f"\n{link}"
             if len(links) > 3:
                 message_text += "\n..."
 
+        codes = re.findall(r'\b\d{4,8}\b', msg_content)
         if codes:
             message_text += "\n\n🔑 Коды:"
             for code in codes[:3]:
