@@ -84,6 +84,57 @@ workon botmail-env && python /home/ваш_username/botmail/bot.py
 /home/ваш_username/.pythonanywhere/logs/
 ```
 
+## Обновление кода
+
+### Локальное обновление
+
+1. Убедитесь, что вы находитесь в директории проекта:
+```bash
+cd botmail
+```
+
+2. Получите последние изменения из репозитория:
+```bash
+git pull origin master
+```
+
+3. Если есть новые зависимости, обновите их:
+```bash
+pip install -r requirements.txt
+```
+
+4. Перезапустите бота:
+```bash
+python bot.py
+```
+
+### Обновление на PythonAnywhere
+
+1. Откройте bash консоль на PythonAnywhere
+
+2. Перейдите в директорию проекта:
+```bash
+cd botmail
+```
+
+3. Получите последние изменения:
+```bash
+git pull origin master
+```
+
+4. Активируйте виртуальное окружение и обновите зависимости:
+```bash
+workon botmail-env
+pip install -r requirements.txt
+```
+
+5. Перезапустите Always-on task:
+- Перейдите в раздел "Tasks"
+- Остановите текущую задачу
+- Запустите её заново
+
+6. Проверьте логи для подтверждения успешного запуска
+
 ## Использование
 
 1. Начните диалог с ботом: [@ваш_бот](https://t.me/ваш_бот)
