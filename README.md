@@ -112,13 +112,6 @@ source ~/.virtualenvs/botmail-env/bin/activate
 tail -f /home/ваш_username/.pythonanywhere/logs/botmail.log
 ```
 
-4. Если при коммите появляется ошибка "empty ident name not allowed":
-```bash
-# Настройте ваши данные в Git
-git config --global user.email "ваш_email@example.com"
-git config --global user.name "Ваше_Имя"
-```
-
 ## Обновление кода
 
 ### Локальное обновление
