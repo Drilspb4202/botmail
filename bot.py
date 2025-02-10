@@ -441,46 +441,43 @@ def create_new_mail(message):
     """Создание нового временного email адреса"""
     try:
         user_id = message.from_user.id
-        max_retries = 3
-        retry_count = 0
 
-        while retry_count < max_retries:
-            try:
-                print(f"DEBUG - Trying to create new email (attempt {retry_count + 1}/{max_retries})...")
-                print(f"DEBUG - API URL: {GET_MAIL_URL}")
+        print(f"DEBUG - Trying to create new email...")
+        print(f"DEBUG - API URL: {GET_MAIL_URL}")
 
-                response = requests.get(GET_MAIL_URL, timeout=30)
-                print(f"DEBUG - Response Status: {response.status_code}")
-                print(f"DEBUG - Response Headers: {response.headers}")
-                print(f"DEBUG - Response Text: {response.text}")
+        response = requests.get(GET_MAIL_URL)
+        print(f"DEBUG - Response Status: {response.status_code}")
+        print(f"DEBUG - Response Headers: {response.headers}")
+        print(f"DEBUG - Response Text: {response.text}")
+        
+        try:
+            data = json.loads(response.text)
+            print(f"DEBUG - Parsed JSON: {data}")
+            
+            if data.get('status') == 'ok' and data.get('mail'):
+                email = data['mail']
+                # Всегда устанавливаем время истечения на 24 часа от текущего момента
+                expired_at = time.time() + EMAIL_LIFETIME
+                password = generate_password()
                 
-                data = json.loads(response.text)
-                print(f"DEBUG - Parsed JSON: {data}")
+                # Инициализируем словарь для пользователя, если его еще нет
+                if user_id not in user_emails:
+                    user_emails[user_id] = {}
                 
-                if data.get('status') == 'ok' and data.get('mail'):
-                    email = data['mail']
-                    # Всегда устанавливаем время истечения на 24 часа от текущего момента
-                    expired_at = time.time() + EMAIL_LIFETIME
-                    password = generate_password()
-                    
-                    # Инициализируем словарь для пользователя, если его еще нет
-                    if user_id not in user_emails:
-                        user_emails[user_id] = {}
-                    
-                    # Добавляем новый email к существующим
-                    user_emails[user_id][email] = {
-                        'email': email,
-                        'password': password,
-                        'expired_at': expired_at
-                    }
-                    
-                    # Обновляем статистику
-                    update_stats(user_id, 'email_created')
-                    
-                    # Запускаем автопроверку для нового ящика
-                    start_checking(message, email)
-                    
-                    response_text = f"""
+                # Добавляем новый email к существующим
+                user_emails[user_id][email] = {
+                    'email': email,
+                    'password': password,
+                    'expired_at': expired_at
+                }
+                
+                # Обновляем статистику
+                update_stats(user_id, 'email_created')
+                
+                # Запускаем автопроверку для нового ящика
+                start_checking(message, email)
+                
+                response_text = f"""
 📧 Ваш новый временный email адрес:
 `{email}`
 
@@ -492,30 +489,18 @@ def create_new_mail(message):
 ♻️ Почта будет автоматически удалена через 24 часа
 
 📬 Используйте кнопку 📋 Список писем для просмотра всех ваших активных ящиков."""
-                    bot.reply_to(message, response_text, parse_mode='Markdown')
-                    return
-                else:
-                    print(f"DEBUG - Invalid response format or error. Status: {data.get('status')}, Message: {data.get('message')}")
-                    retry_count += 1
-                    if retry_count < max_retries:
-                        time.sleep(2)  # Ждем 2 секунды перед следующей попыткой
-                        continue
-                    bot.reply_to(message, "❌ Не удалось создать email. Сервис временно недоступен, попробуйте позже.",
-                               reply_markup=create_main_keyboard())
-                    
-            except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
-                print(f"DEBUG - Request/Parse Error: {str(e)}")
-                retry_count += 1
-                if retry_count < max_retries:
-                    time.sleep(2)
-                    continue
-                bot.reply_to(message, "❌ Ошибка при создании почты. Сервис временно недоступен, попробуйте позже.",
-                       reply_markup=create_main_keyboard())
-                return
-                
+                bot.reply_to(message, response_text, parse_mode='Markdown')
+            else:
+                print(f"DEBUG - Invalid response format. Status: {data.get('status')}, Mail: {data.get('mail')}")
+                bot.reply_to(message, "❌ Не удалось создать email. Попробуйте позже.",
+                           reply_markup=create_main_keyboard())
+        except json.JSONDecodeError as e:
+            print(f"DEBUG - JSON Parse Error: {str(e)}")
+            bot.reply_to(message, "❌ Ошибка при разборе ответа сервера. Возможно, сервис временно недоступен.",
+                   reply_markup=create_main_keyboard())
     except Exception as e:
         print(f"DEBUG - Unexpected Error: {str(e)}")
-        bot.reply_to(message, f"❌ Произошла неожиданная ошибка при создании почты. Попробуйте позже.",
+        bot.reply_to(message, f"❌ Произошла неожиданная ошибка: {str(e)}",
                    reply_markup=create_main_keyboard())
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('del_'))
@@ -605,19 +590,28 @@ def show_mailbox_messages(call):
     try:
         email = call.data.replace('show_mailbox_', '')
         user_id = call.from_user.id
+        print(f"DEBUG - Checking mailbox for user {user_id}, email: {email}")
         
         if user_id not in user_emails or email not in user_emails[user_id]:
+            print(f"DEBUG - Mailbox not found. User emails: {user_emails.get(user_id, 'No emails')}")
             bot.answer_callback_query(call.id, "❌ Этот почтовый ящик больше не доступен")
-        return
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+            return
             
         checking_msg = bot.send_message(call.message.chat.id, "⏳ Проверяю сообщения...")
         
         url = f"{GET_MESSAGES_URL}?mail={email}"
+        print(f"DEBUG - Requesting messages from URL: {url}")
+        
         try:
             response = requests.get(url)
+            print(f"DEBUG - Response status: {response.status_code}")
+            print(f"DEBUG - Response text: {response.text}")
+            
             if response.status_code == 200 and response.text.strip():
                 data = json.loads(response.text)
                 messages = data.get('messages', [])
+                print(f"DEBUG - Found {len(messages)} messages")
                 
                 if not messages:
                     bot.send_message(call.message.chat.id, f"📭 В ящике {email} пока нет сообщений")
@@ -630,6 +624,7 @@ def show_mailbox_messages(call):
                 )
                 
                 format_type = user_message_format.get(user_id, 'full')
+                print(f"DEBUG - Using format type: {format_type}")
                 
                 for idx, msg in enumerate(messages, 1):
                     message_text, msg_keyboard = format_message(msg, format_type, idx, len(messages))
@@ -644,13 +639,19 @@ def show_mailbox_messages(call):
                             InlineKeyboardButton("📋 Показать полностью", callback_data=f"show_full_{idx}")
                         )
                     
-                    bot.send_message(
-                        call.message.chat.id,
-                        message_text,
-                        parse_mode='Markdown',
-                        reply_markup=msg_keyboard
-                    )
+                    try:
+                        bot.send_message(
+                            call.message.chat.id,
+                            message_text,
+                            parse_mode='Markdown',
+                            reply_markup=msg_keyboard
+                        )
+                        print(f"DEBUG - Successfully sent message {idx}")
+                    except Exception as msg_e:
+                        print(f"DEBUG - Error sending message {idx}: {str(msg_e)}")
+                        
             else:
+                print(f"DEBUG - Failed to get messages. Status: {response.status_code}")
                 bot.send_message(call.message.chat.id, "❌ Не удалось получить сообщения")
                 
         except Exception as e:
@@ -763,8 +764,14 @@ def generate_name_button(message):
 @bot.message_handler(func=lambda message: True)
 def echo_all(message):
     """Обработчик всех остальных сообщений"""
+    # Игнорируем команду /start и другие команды
     if message.text and message.text.startswith('/'):
-        return  # Игнорируем все неизвестные команды
+        if message.text == '/start':
+            return
+        if message.text in ['/help', '/stats', '/messages', '/domains', '/backup', '/search', '/format']:
+            return
+        bot.reply_to(message, "❌ Неизвестная команда. Используйте /help для просмотра списка команд.")
+        return
     bot.reply_to(message, "❓ Используйте кнопки меню для управления ботом.", reply_markup=create_main_keyboard())
 
 def split_long_message(text, max_length=4096):
