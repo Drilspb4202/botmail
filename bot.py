@@ -1058,15 +1058,40 @@ def format_message(msg, format_type='full', idx=None, total=None):
         links = re.findall(r'href=[\'"]?([^\'" >]+)', msg_content)
         buttons = re.findall(r'<button[^>]*>(.*?)</button>', msg_content, re.DOTALL)
         
+        print(f"DEBUG - Found raw links: {links}")
+        
         # Фильтруем и валидируем ссылки
         valid_links = []
         for link in links:
-            # Проверяем, что ссылка начинается с http:// или https://
-            if link.startswith(('http://', 'https://')):
-                valid_links.append(link)
-            elif not link.startswith(('javascript:', 'data:', 'file:')):
-                # Добавляем https:// к ссылкам без протокола
-                valid_links.append('https://' + link)
+            # Удаляем пробелы и специальные символы
+            link = link.strip()
+            # Проверяем базовую структуру URL
+            if not re.match(r'^https?://', link):
+                if not link.startswith(('javascript:', 'data:', 'file:', 'ftp:', 'mailto:')):
+                    link = 'https://' + link
+                else:
+                    print(f"DEBUG - Skipping invalid protocol link: {link}")
+                    continue
+                    
+            # Проверяем, что URL содержит допустимый домен
+            if not re.match(r'^https?://[a-zA-Z0-9-_.]+\.[a-zA-Z]{2,}', link):
+                print(f"DEBUG - Invalid domain in link: {link}")
+                continue
+                
+            try:
+                # Дополнительная проверка структуры URL
+                from urllib.parse import urlparse
+                parsed = urlparse(link)
+                if all([parsed.scheme, parsed.netloc]):
+                    valid_links.append(link)
+                    print(f"DEBUG - Valid link added: {link}")
+                else:
+                    print(f"DEBUG - Invalid URL structure: {link}")
+            except Exception as e:
+                print(f"DEBUG - URL parsing error: {str(e)} for link: {link}")
+                continue
+        
+        print(f"DEBUG - Valid links after filtering: {valid_links}")
         
         # Удаляем оставшиеся HTML теги
         msg_content = re.sub(r'<[^>]+>', ' ', msg_content)
@@ -1111,8 +1136,11 @@ def format_message(msg, format_type='full', idx=None, total=None):
                     button_text = f"🔗 Ссылка {i+1}"
                     # Добавляем кнопку для каждой ссылки
                     msg_keyboard.row(InlineKeyboardButton(text=button_text, url=link))
+                    print(f"DEBUG - Added button with URL: {link}")
                 except Exception as e:
                     print(f"DEBUG - Error adding URL button: {str(e)}, URL: {link}")
+                    # Добавляем ссылку в текст сообщения вместо кнопки
+                    message_text += f"\n{button_text}: {link}"
                     continue
 
         # Улучшенный поиск кодов верификации
