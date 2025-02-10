@@ -1058,6 +1058,16 @@ def format_message(msg, format_type='full', idx=None, total=None):
         links = re.findall(r'href=[\'"]?([^\'" >]+)', msg_content)
         buttons = re.findall(r'<button[^>]*>(.*?)</button>', msg_content, re.DOTALL)
         
+        # Фильтруем и валидируем ссылки
+        valid_links = []
+        for link in links:
+            # Проверяем, что ссылка начинается с http:// или https://
+            if link.startswith(('http://', 'https://')):
+                valid_links.append(link)
+            elif not link.startswith(('javascript:', 'data:', 'file:')):
+                # Добавляем https:// к ссылкам без протокола
+                valid_links.append('https://' + link)
+        
         # Удаляем оставшиеся HTML теги
         msg_content = re.sub(r'<[^>]+>', ' ', msg_content)
         msg_content = re.sub(r'\s+', ' ', msg_content)
@@ -1093,13 +1103,17 @@ def format_message(msg, format_type='full', idx=None, total=None):
                 message_text += f"\n• {button_text}"
 
         # Добавляем ссылки как кнопки
-        if links:
+        if valid_links:
             message_text += "\n\n🔗 Ссылки для входа:"
-            for i, link in enumerate(links):
-                # Создаем короткое имя для кнопки
-                button_text = f"🔗 Ссылка {i+1}"
-                # Добавляем кнопку для каждой ссылки
-                msg_keyboard.add(InlineKeyboardButton(text=button_text, url=link))
+            for i, link in enumerate(valid_links):
+                try:
+                    # Создаем короткое имя для кнопки
+                    button_text = f"🔗 Ссылка {i+1}"
+                    # Добавляем кнопку для каждой ссылки
+                    msg_keyboard.row(InlineKeyboardButton(text=button_text, url=link))
+                except Exception as e:
+                    print(f"DEBUG - Error adding URL button: {str(e)}, URL: {link}")
+                    continue
 
         # Улучшенный поиск кодов верификации
         verification_codes = []
@@ -1132,7 +1146,7 @@ def format_message(msg, format_type='full', idx=None, total=None):
         for code in verification_codes:
             code = code.strip()
             # Проверяем, что код не является частью ссылки или email
-            if (not any(code in link for link in links) and 
+            if (not any(code in link for link in valid_links) and 
                 '@' not in code and 
                 not any(word in code.lower() for word in ['http', 'www']) and
                 not re.match(r'^\d{5}$', code)):  # исключаем почтовые индексы
@@ -1147,7 +1161,7 @@ def format_message(msg, format_type='full', idx=None, total=None):
                 message_text += f"\n`{code}`"
 
         # Добавляем кнопку удаления
-        msg_keyboard.add(InlineKeyboardButton("🗑 Удалить сообщение", callback_data=f"del_{idx}"))
+        msg_keyboard.row(InlineKeyboardButton("🗑 Удалить сообщение", callback_data=f"del_{idx}"))
             
         return message_text, msg_keyboard
         
