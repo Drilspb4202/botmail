@@ -125,6 +125,7 @@ def get_messages(message):
     try:
         user_id = message.from_user.id
         print(f"DEBUG - Checking messages for user {user_id}")
+        print(f"DEBUG - Current user_emails state: {user_emails}")
         
         if user_id not in user_emails:
             print(f"DEBUG - No active emails for user {user_id}")
@@ -144,6 +145,7 @@ def get_messages(message):
             email = next(iter(user_emails[user_id].keys()))
             email_data = user_emails[user_id][email]
             print(f"DEBUG - Checking email: {email}")
+            print(f"DEBUG - Email data: {email_data}")
             
             url = f"{GET_MESSAGES_URL}?mail={email}"
             print(f"DEBUG - Request URL: {url}")
