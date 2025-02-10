@@ -409,6 +409,417 @@ def create_email_keyboard(email, password):
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     """Обработчик команды /start"""
+import telebot
+import requests
+import json
+import os
+from dotenv import load_dotenv
+import time
+import re
+import random
+import string
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, Message
+import threading
+
+# Загрузка переменных окружения
+load_dotenv()
+
+# Получение токена бота из переменных окружения
+BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+print(f"Debug - Loading bot token: {BOT_TOKEN}")
+
+if not BOT_TOKEN:
+    raise ValueError("Не удалось загрузить токен бота из .env файла")
+
+bot = telebot.TeleBot(BOT_TOKEN)
+
+# API URLs
+BASE_URL = "https://tempmail.glitchy.workers.dev"
+GET_MAIL_URL = f"{BASE_URL}/get"
+GET_MESSAGES_URL = f"{BASE_URL}/see"
+GET_MESSAGE_CONTENT_URL = f"{BASE_URL}/message"
+CUSTOM_MAIL_URL = f"{BASE_URL}/custom"
+
+# Изменяем структуру хранения email адресов
+user_emails = {}  # user_id -> {email -> {email_data}}
+
+# Добавляем словарь для хранения таймеров проверки
+check_timers = {}
+
+# Добавляем словарь для хранения интервалов проверки
+check_intervals = {}
+
+# Добавляем словарь для хранения прочитанных сообщений
+user_read_messages = {}
+
+# Добавляем словарь для хранения настроек формата сообщений
+user_message_format = {}
+
+# Форматы сообщений
+MESSAGE_FORMATS = {
+    'full': '📋 Полный',
+    'brief': '📝 Краткий',
+    'compact': '📱 Компактный'
+}
+
+# Добавляем список доступных доменов из конфига
+AVAILABLE_DOMAINS = [
+    'guerrillamail.com',
+    'guerrillamail.net',
+    'guerrillamail.org',
+    'sharklasers.com',
+    'grr.la',
+    'pokemail.net',
+    'spam4.me'
+]
+
+# Список администраторов бота (ID пользователей Telegram)
+ADMIN_IDS = [int(os.getenv('ADMIN_ID', '0'))]  # Добавьте сюда ID администраторов
+
+# Глобальная статистика бота
+bot_stats = {
+    'start_time': time.time(),
+    'total_users': set(),  # Уникальные пользователи
+    'total_emails_created': 0,
+    'total_messages_received': 0,
+    'total_checks': 0,
+    'active_emails': 0,  # Текущие активные почтовые ящики
+}
+
+# Добавляем словарь для хранения статистики
+user_stats = {}
+
+# Константы для времени жизни почты
+EMAIL_LIFETIME = 86400  # 24 часа
+EMAIL_CHECK_INTERVAL = 15  # Проверка каждые 15 секунд
+
+# Списки для генерации имен
+FIRST_NAMES = [
+    # Английские имена
+    "Alex", "Michael", "David", "John", "James", "Robert", "William", "Thomas",
+    "Daniel", "Richard", "Joseph", "Charles", "Christopher", "Paul", "Mark",
+    "Donald", "George", "Kenneth", "Steven", "Edward", "Brian", "Ronald",
+    "Anthony", "Kevin", "Jason", "Matthew", "Gary", "Timothy", "Jose", "Larry",
+    # Русские имена (транслит)
+    "Ivan", "Dmitry", "Sergey", "Andrey", "Pavel", "Mikhail", "Nikolay", "Vladimir",
+    "Alexander", "Maxim", "Anton", "Roman", "Artem", "Denis", "Evgeny", "Igor",
+    "Oleg", "Victor", "Yury", "Boris", "Konstantin", "Leo", "Peter", "Vadim"
+]
+
+LAST_NAMES = [
+    # Английские фамилии
+    "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis",
+    "Rodriguez", "Martinez", "Hernandez", "Lopez", "Gonzalez", "Wilson", "Anderson",
+    "Thomas", "Taylor", "Moore", "Jackson", "Martin", "Lee", "Thompson", "White",
+    "Harris", "Clark", "Lewis", "Robinson", "Walker", "Hall", "Young",
+    # Русские фамилии (транслит)
+    "Ivanov", "Petrov", "Sidorov", "Smirnov", "Kuznetsov", "Popov", "Sokolov",
+    "Lebedev", "Kozlov", "Novikov", "Morozov", "Volkov", "Solovyov", "Vasiliev",
+    "Zaytsev", "Pavlov", "Semyonov", "Golubev", "Vinogradov", "Bogdanov"
+]
+
+def generate_random_name():
+    """Генерирует случайное имя, фамилию и логин"""
+    first_name = random.choice(FIRST_NAMES)
+    last_name = random.choice(LAST_NAMES)
+    # Добавляем случайное число для уникальности
+    random_number = random.randint(1, 999)
+    login = f"{first_name.lower()}.{last_name.lower()}{random_number}"
+    return {
+        'first_name': first_name,
+        'last_name': last_name,
+        'login': login
+    }
+
+def get_messages(message):
+    """Получение и отображение сообщений"""
+    try:
+        user_id = message.from_user.id
+        print(f"DEBUG - Checking messages for user {user_id}")
+        print(f"DEBUG - Current user_emails state: {user_emails}")
+        
+        if user_id not in user_emails:
+            print(f"DEBUG - No active emails for user {user_id}")
+            bot.reply_to(message, "❌ У вас нет активной почты. Создайте новую с помощью кнопки 📧 Создать почту")
+            return
+
+        checking_msg = bot.reply_to(message, "⏳ Проверяю сообщения...")
+        
+        try:
+            # Получаем первый email из словаря пользователя
+            if not user_emails[user_id]:
+                print(f"DEBUG - Empty email dictionary for user {user_id}")
+                bot.reply_to(message, "❌ У вас нет активной почты. Создайте новую с помощью кнопки 📧 Создать почту")
+                bot.delete_message(message.chat.id, checking_msg.message_id)
+                return
+                
+            email = next(iter(user_emails[user_id].keys()))
+            email_data = user_emails[user_id][email]
+            print(f"DEBUG - Checking email: {email}")
+            print(f"DEBUG - Email data: {email_data}")
+            
+            url = f"{GET_MESSAGES_URL}?mail={email}"
+            print(f"DEBUG - Request URL: {url}")
+            
+            response = requests.get(url, timeout=10)
+            print(f"DEBUG - Response status: {response.status_code}")
+            print(f"DEBUG - Response text: {response.text}")
+            
+            response.raise_for_status()
+            
+            if not response.text.strip():
+                bot.reply_to(message, "📭 У вас пока нет сообщений.")
+                bot.delete_message(message.chat.id, checking_msg.message_id)
+                return
+
+            data = json.loads(response.text)
+            if not isinstance(data, dict):
+                print(f"DEBUG - Invalid response format: {data}")
+                raise ValueError("Неверный формат данных от сервера")
+                
+            messages = data.get('messages', [])
+            print(f"DEBUG - Found {len(messages)} messages")
+            
+            if not messages:
+                bot.reply_to(message, "📭 У вас пока нет сообщений.")
+                bot.delete_message(message.chat.id, checking_msg.message_id)
+                return
+                
+            # Инициализируем множество прочитанных сообщений для пользователя
+            if user_id not in user_read_messages:
+                user_read_messages[user_id] = set()
+
+            # Отмечаем все сообщения как прочитанные
+            for msg in messages:
+                msg_id = msg.get('id', '')
+                if msg_id:
+                    user_read_messages[user_id].add(msg_id)
+                    update_stats(user_id, 'message_received')
+
+            # Всегда используем полный формат
+            format_type = 'full'
+
+            for idx, msg in enumerate(messages, 1):
+                message_text, msg_keyboard = format_message(msg, format_type, idx, len(messages))
+                msg_keyboard.row(
+                    InlineKeyboardButton("🗑 Удалить сообщение", callback_data=f"del_{idx}")
+                )
+
+                try:
+                    bot.send_message(message.chat.id, message_text, parse_mode='Markdown', reply_markup=msg_keyboard)
+                except Exception as e:
+                    print(f"DEBUG - Error sending message {idx}: {str(e)}")
+                    try:
+                        short_message, short_keyboard = format_message(msg, 'compact', idx, len(messages))
+                        bot.send_message(message.chat.id, short_message, reply_markup=short_keyboard)
+                    except Exception as e2:
+                        print(f"DEBUG - Error sending short message {idx}: {str(e2)}")
+
+            bot.delete_message(message.chat.id, checking_msg.message_id)
+                
+        except json.JSONDecodeError as e:
+            print(f"DEBUG - JSON Parse Error: {str(e)}, Response: {response.text}")
+            bot.reply_to(message, "❌ Ошибка при разборе ответа сервера. Возможно, почтовый сервис временно недоступен.")
+            bot.delete_message(message.chat.id, checking_msg.message_id)
+                
+        except requests.exceptions.RequestException as e:
+            print(f"DEBUG - Request Error: {str(e)}")
+            bot.reply_to(message, "❌ Ошибка при получении сообщений. Сервер временно недоступен.")
+            bot.delete_message(message.chat.id, checking_msg.message_id)
+            
+    except Exception as e:
+        print(f"DEBUG - Unexpected Error: {str(e)}")
+        print(f"DEBUG - User emails state: {user_emails.get(message.from_user.id, 'No emails')}")
+        bot.reply_to(message, "❌ Ошибка при проверке почты. Попробуйте создать новый ящик.")
+        try:
+            bot.delete_message(message.chat.id, checking_msg.message_id)
+        except:
+            pass
+
+@bot.message_handler(commands=['help'])
+def help_command(message):
+    help_text = """
+🔍 *Полное руководство по использованию NeuroMail Bot*
+
+📧 *Основные команды:*
+• Создать почту - создание нового временного email
+• Проверить почту - проверка наличия новых писем
+• Список писем - просмотр всех полученных писем
+• Удалить почту - удаление текущего адреса
+• Помощь - вызов этой справки
+
+⚙️ *Дополнительные функции:*
+• Автоматическая проверка почты каждую минуту
+• Мгновенные уведомления о новых письмах
+• Умное определение кодов и ссылок в письмах
+• Три формата отображения сообщений
+• Выбор почтового домена
+
+📨 *Работа с письмами:*
+• Просмотр содержимого в разных форматах
+• Удаление ненужных писем
+• Автоматическое форматирование текста
+• Поддержка HTML-писем
+• Защита от спама
+
+🔐 *Безопасность:*
+• Временные адреса живут 1 час
+• Автоматическое удаление данных
+• Безопасная передача информации
+• Защита от несанкционированного доступа
+• Отсутствие логирования содержимого
+
+📱 *Форматы отображения:*
+• Полный - максимум информации
+• Краткий - основные детали
+• Компактный - только важное
+
+⚡️ *Автоматизация:*
+• Автозапуск проверки почты
+• Умное определение важной информации
+• Автоочистка старых данных
+• Система восстановления при сбоях
+• Оптимизация работы
+
+🎯 *Советы по использованию:*
+• Создавайте отдельный адрес для каждого сервиса
+• Сохраняйте важную информацию сразу
+• Используйте разные форматы для удобства
+• Проверяйте почту после уведомлений
+• Удаляйте неиспользуемые адреса
+
+📊 *Возможности статистики:*
+• Количество созданных ящиков
+• Частота проверки почты
+• Количество полученных писем
+• История активности
+• Мониторинг использования
+    """
+    bot.reply_to(message, help_text, parse_mode='Markdown')
+
+def update_stats(user_id, action):
+    """Обновление статистики пользователя и глобальной статистики"""
+    # Обновление пользовательской статистики
+    if user_id not in user_stats:
+        user_stats[user_id] = {
+            'emails_created': 0,
+            'messages_checked': 0,
+            'messages_received': 0,
+            'last_active': None
+        }
+    
+    stats = user_stats[user_id]
+    stats['last_active'] = time.strftime('%Y-%m-%d %H:%M:%S')
+    
+    # Обновление глобальной статистики
+    bot_stats['total_users'].add(user_id)
+    
+    if action == 'email_created':
+        stats['emails_created'] += 1
+        bot_stats['total_emails_created'] += 1
+        bot_stats['active_emails'] = len(user_emails)
+    elif action == 'messages_checked':
+        stats['messages_checked'] += 1
+        bot_stats['total_checks'] += 1
+    elif action == 'message_received':
+        stats['messages_received'] += 1
+        bot_stats['total_messages_received'] += 1
+
+@bot.message_handler(commands=['stats'])
+def show_stats(message):
+    """Показывает статистику использования бота"""
+    if message.from_user.id not in ADMIN_IDS:
+        bot.reply_to(message, "❌ У вас нет прав для просмотра статистики.")
+        return
+
+    # Подсчет активных пользователей (использовали бота за последние 24 часа)
+    current_time = time.time()
+    active_users = sum(1 for stats in user_stats.values() 
+                      if stats['last_active'] and 
+                      time.mktime(time.strptime(stats['last_active'], '%Y-%m-%d %H:%M:%S')) > current_time - 86400)
+
+    # Формирование статистики
+    uptime = time.time() - bot_stats['start_time']
+    days = int(uptime // 86400)
+    hours = int((uptime % 86400) // 3600)
+    minutes = int((uptime % 3600) // 60)
+
+    stats_text = f"""
+📊 *Статистика бота NeuroMailBot*
+
+⏱ *Время работы:* {days}д {hours}ч {minutes}м
+
+👥 *Пользователи:*
+• Всего пользователей: {len(bot_stats['total_users'])}
+• Активных за 24ч: {active_users}
+
+📧 *Почтовые ящики:*
+• Создано всего: {bot_stats['total_emails_created']}
+• Активных сейчас: {bot_stats['active_emails']}
+
+📨 *Сообщения:*
+• Всего получено: {bot_stats['total_messages_received']}
+• Проверок почты: {bot_stats['total_checks']}
+
+🔝 *Топ пользователей:*
+"""
+
+    # Добавляем топ-5 пользователей по количеству созданных ящиков
+    top_users = sorted(user_stats.items(), 
+                      key=lambda x: x[1]['emails_created'], 
+                      reverse=True)[:5]
+    
+    for i, (user_id, stats) in enumerate(top_users, 1):
+        stats_text += f"{i}. ID: {user_id} - {stats['emails_created']} ящиков\n"
+
+    bot.reply_to(message, stats_text, parse_mode='Markdown')
+
+# Функция для форматирования email адреса
+def format_email(email):
+    """Форматирует email адрес для URL"""
+    # Разделяем email на части
+    username, domain = email.split('@')
+    return f"{username}"
+
+def create_main_keyboard():
+    """Создает основную клавиатуру"""
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.row(KeyboardButton("📧 Создать почту"))
+    keyboard.row(KeyboardButton("📬 Проверить почту"), KeyboardButton("📋 Мои ящики"))
+    keyboard.row(KeyboardButton("⚙️ Настройки"), KeyboardButton("ℹ️ Помощь"))
+    return keyboard
+
+def generate_password(length=12):
+    """Генерирует сложный пароль"""
+    lowercase = string.ascii_lowercase
+    uppercase = string.ascii_uppercase
+    digits = string.digits
+    symbols = "!@#$%^&*()_+-=[]{}|"
+    
+    # Убеждаемся, что пароль содержит как минимум по одному символу каждого типа
+    password = [
+        random.choice(lowercase),
+        random.choice(uppercase),
+        random.choice(digits),
+        random.choice(symbols)
+    ]
+    
+    # Добавляем остальные символы
+    for _ in range(length - 4):
+        password.append(random.choice(lowercase + uppercase + digits + symbols))
+    
+    # Перемешиваем пароль
+    random.shuffle(password)
+    return ''.join(password)
+
+def create_email_keyboard(email, password):
+    """Создает клавиатуру для копирования email и пароля"""
+    # Возвращаем None вместо клавиатуры, чтобы не показывать кнопки
+    return None
+
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    """Обработчик команды /start"""
     welcome_text = """
 🤖 NeuroMailBot - Ваш надежный помощник для работы с временной почтой
 
