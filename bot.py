@@ -374,8 +374,8 @@ def create_main_keyboard():
     """Создает основную клавиатуру"""
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.row(KeyboardButton("📧 Создать почту"))
-    keyboard.row(KeyboardButton("📬 Проверить почту"), KeyboardButton("📋 Список писем"))
-    keyboard.row(KeyboardButton("❌ Удалить почту"), KeyboardButton("👤 Генерация имени"))
+    keyboard.row(KeyboardButton("📬 Проверить почту"), KeyboardButton("📋 Мои ящики"))
+    keyboard.row(KeyboardButton("⚙️ Настройки"), KeyboardButton("ℹ️ Помощь"))
     return keyboard
 
 def generate_password(length=12):
@@ -549,7 +549,7 @@ def check_mail_button(message):
         return
     get_messages(message)
 
-@bot.message_handler(func=lambda message: message.text == "📋 Список писем")
+@bot.message_handler(func=lambda message: message.text == "📋 Мои ящики")
 def list_messages(message):
     """Обработчик кнопки списка писем"""
     user_id = message.from_user.id
@@ -565,29 +565,42 @@ def list_messages(message):
             reverse=True
         )
         
+        response_text = "📬 *Ваши активные почтовые ящики:*\n\n"
+        
         for email, email_data in sorted_emails:
             expired_at = email_data['expired_at']
-            remaining_time = int((expired_at - time.time()) / 3600)  # оставшееся время в часах
+            time_left = format_time_left(expired_at)
+            progress_bar = create_progress_bar(expired_at)
             
-            # Добавляем кнопку для каждого активного ящика
+            # Добавляем статус почтового ящика
+            status = "🟢" if time_left.endswith('ч') else "🟡"
+            
+            response_text += f"{status} `{email}`\n"
+            response_text += f"⏳ {progress_bar} ({time_left})\n\n"
+            
+            # Добавляем кнопки действий для каждого ящика
             keyboard.row(
-                InlineKeyboardButton(
-                    f"📬 {email} (⏳ {remaining_time}ч)",
-                    callback_data=f"show_mailbox_{email}"
-                )
+                InlineKeyboardButton(f"📨 Проверить", callback_data=f"check_{email}"),
+                InlineKeyboardButton(f"🗑 Удалить", callback_data=f"delete_{email}")
             )
         
         keyboard.row(
-            InlineKeyboardButton("🔄 Обновить", callback_data="refresh_mailboxes")
+            InlineKeyboardButton("🔄 Обновить список", callback_data="refresh_mailboxes")
         )
         
         bot.reply_to(
             message,
-            "📬 Выберите почтовый ящик для просмотра сообщений:",
+            response_text,
+            parse_mode='Markdown',
             reply_markup=keyboard
         )
     else:
-        bot.reply_to(message, "❌ У вас нет активных почтовых ящиков. Создайте новый с помощью кнопки 📧 Создать почту")
+        bot.reply_to(
+            message, 
+            "❌ У вас нет активных почтовых ящиков.\n\n"
+            "Нажмите 📧 *Создать почту* чтобы получить новый адрес.",
+            parse_mode='Markdown'
+        )
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('show_mailbox_'))
 def show_mailbox_messages(call):
@@ -1045,6 +1058,22 @@ def delete_message_handler(call):
         print(f"DEBUG - Error deleting message: {str(e)}")
         bot.answer_callback_query(call.id, "❌ Ошибка при удалении сообщения")
 
+def format_time_left(expired_at):
+    """Форматирует оставшееся время жизни почты"""
+    remaining = expired_at - time.time()
+    hours = int(remaining // 3600)
+    minutes = int((remaining % 3600) // 60)
+    
+    if hours > 0:
+        return f"{hours}ч {minutes}м"
+    return f"{minutes}м"
+
+def create_progress_bar(expired_at, total_time=EMAIL_LIFETIME):
+    """Создает прогресс-бар для оставшегося времени"""
+    remaining = expired_at - time.time()
+    progress = int((remaining / total_time) * 10)
+    return "▰" * progress + "▱" * (10 - progress)
+
 def format_message(msg, format_type='full', idx=None, total=None):
     try:
         # Получаем содержимое письма
@@ -1052,150 +1081,46 @@ def format_message(msg, format_type='full', idx=None, total=None):
         if not msg_content:
             msg_content = "Текст письма отсутствует"
             
-        # Очищаем HTML
+        # Очищаем HTML и форматируем текст
         msg_content = re.sub(r'<style.*?</style>', '', msg_content, flags=re.DOTALL)
         msg_content = re.sub(r'<script.*?</script>', '', msg_content, flags=re.DOTALL)
-        
-        # Извлекаем ссылки до удаления HTML, сохраняя их целостность
-        links = []
-        for match in re.finditer(r'href=[\'"]([^\'"]+)[\'"]', msg_content):
-            link = match.group(1).strip()
-            # Удаляем пробелы и переносы строк внутри ссылки
-            link = ''.join(link.split())
-            if link:
-                links.append(link)
-        
-        print(f"DEBUG - Found raw links: {links}")
-        
-        # Фильтруем и валидируем ссылки
-        valid_links = []
-        for link in links:
-            # Проверяем базовую структуру URL
-            if not re.match(r'^https?://', link):
-                if not link.startswith(('javascript:', 'data:', 'file:', 'ftp:', 'mailto:')):
-                    link = 'https://' + link
-                else:
-                    print(f"DEBUG - Skipping invalid protocol link: {link}")
-                    continue
-                    
-            # Проверяем, что URL содержит допустимый домен
-            if not re.match(r'^https?://[a-zA-Z0-9-_.]+\.[a-zA-Z]{2,}', link):
-                print(f"DEBUG - Invalid domain in link: {link}")
-                continue
-                
-            try:
-                # Дополнительная проверка структуры URL
-                from urllib.parse import urlparse, urljoin
-                parsed = urlparse(link)
-                if all([parsed.scheme, parsed.netloc]):
-                    # Собираем ссылку обратно без пробелов и переносов
-                    clean_link = urljoin(parsed.scheme + '://' + parsed.netloc, parsed.path)
-                    if parsed.query:
-                        clean_link += '?' + parsed.query
-                    if parsed.fragment:
-                        clean_link += '#' + parsed.fragment
-                    valid_links.append(clean_link)
-                    print(f"DEBUG - Valid link added: {clean_link}")
-                else:
-                    print(f"DEBUG - Invalid URL structure: {link}")
-            except Exception as e:
-                print(f"DEBUG - URL parsing error: {str(e)} for link: {link}")
-                continue
-        
-        print(f"DEBUG - Valid links after filtering: {valid_links}")
-        
-        # Удаляем оставшиеся HTML теги
-        msg_content = re.sub(r'<[^>]+>', ' ', msg_content)
-        msg_content = re.sub(r'\s+', ' ', msg_content)
-        msg_content = msg_content.strip()
         
         # Безопасное получение данных
         from_field = msg.get('from', 'Неизвестно')
         subject = msg.get('subject', 'Без темы')
         date = msg.get('date', 'Не указана')
         
-        # Экранируем специальные символы Markdown
-        msg_content = msg_content.replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
-        from_field = from_field.replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
-        subject = subject.replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
-        
-        # Формируем базовое сообщение
-        message_text = f"""📨 {idx}/{total if total else '?'}
-От: {from_field}
-Тема: {subject}
-Дата: {date}
+        # Форматируем сообщение с разделителями
+        message_text = f"""{'═' * 30}
+📨 *Сообщение {idx}/{total if total else '?'}*
 
-📝 Текст письма:
+📤 *От:* `{from_field}`
+📝 *Тема:* `{subject}`
+🕒 *Дата:* `{date}`
+
+{'─' * 30}
 {msg_content}"""
 
-        # Создаем клавиатуру для сообщения
-        msg_keyboard = InlineKeyboardMarkup()
-
-        # Добавляем кнопки из HTML, если есть
-        if valid_links:
-            message_text += "\n\n🔗 Ссылки для входа:"
-            for i, link in enumerate(valid_links):
-                try:
-                    # Создаем короткое имя для кнопки
-                    button_text = f"🔗 Ссылка {i+1}"
-                    # Добавляем кнопку для каждой ссылки
-                    msg_keyboard.row(InlineKeyboardButton(text=button_text, url=link))
-                    print(f"DEBUG - Added button with URL: {link}")
-                except Exception as e:
-                    print(f"DEBUG - Error adding URL button: {str(e)}, URL: {link}")
-                    # Добавляем ссылку в текст сообщения вместо кнопки
-                    message_text += f"\n{button_text}: {link}"
-                    continue
-
-        # Улучшенный поиск кодов верификации
-        verification_codes = []
+        # Создаем клавиатуру
+        msg_keyboard = InlineKeyboardMarkup(row_width=2)
         
-        # Сначала ищем цифровые коды напрямую в тексте
-        numeric_codes = re.findall(r'(?<!\d)(\d{6})(?!\d)', msg_content)
-        verification_codes.extend(numeric_codes)
-        
-        # Затем ищем коды после ключевых слов
-        code_patterns = [
-            r'(?:code|код|verify|token|auth|pin)[:\s]+(\d{6})',
-            r'(?:enter|введите)[:\s]+(?:the\s+)?(?:code|pin|код)?[:\s]*(\d{6})',
-            r'(?:verification|confirmation)[:\s]+(?:code|pin|код)?[:\s]*(\d{6})',
-            r'(?:your|ваш)[:\s]+(?:code|pin|код)[:\s]+(?:is|:)[:\s]*(\d{6})',
-            r'(?<!\d)(\d{6})(?!\d)',  # Изолированный 6-значный код
+        # Добавляем кнопки действий
+        action_buttons = [
+            InlineKeyboardButton("📋 Копировать", callback_data=f"copy_{idx}"),
+            InlineKeyboardButton("🗑 Удалить", callback_data=f"del_{idx}"),
+            InlineKeyboardButton("📤 Переслать", callback_data=f"forward_{idx}"),
+            InlineKeyboardButton("💾 Сохранить", callback_data=f"save_{idx}")
         ]
         
-        for pattern in code_patterns:
-            matches = re.finditer(pattern, msg_content, re.MULTILINE | re.IGNORECASE)
-            for match in matches:
-                code = match.group(1) if len(match.groups()) > 0 else match.group(0)
-                code = code.strip()
-                if code and code.isdigit() and len(code) == 6:
-                    verification_codes.append(code)
-                    print(f"DEBUG - Found numeric code: {code}")
-        
-        # Удаляем дубликаты и сортируем
-        verification_codes = sorted(set(verification_codes))
-        print(f"DEBUG - Final codes: {verification_codes}")
-        
-        if verification_codes:
-            message_text += "\n\n🔑 Коды подтверждения:"
-            for code in verification_codes:
-                message_text += f"\n`{code}`"
+        # Добавляем кнопки парами
+        for i in range(0, len(action_buttons), 2):
+            msg_keyboard.row(*action_buttons[i:i+2])
 
-        # Добавляем кнопку удаления
-        msg_keyboard.row(InlineKeyboardButton("🗑 Удалить сообщение", callback_data=f"del_{idx}"))
-            
         return message_text, msg_keyboard
         
     except Exception as e:
         print(f"DEBUG - Error in format_message: {str(e)}")
-        # Возвращаем безопасное сообщение в случае ошибки
-        error_text = f"""📨 {idx}/{total if total else '?'}
-От: {msg.get('from', 'Неизвестно')}
-Тема: {msg.get('subject', 'Без темы')}
-Дата: {msg.get('date', 'Не указана')}
-
-❌ Ошибка при форматировании сообщения"""
-        return error_text, InlineKeyboardMarkup()
+        return "❌ Ошибка при форматировании сообщения", InlineKeyboardMarkup()
 
 @bot.message_handler(commands=['format'])
 def change_format(message):
@@ -1420,6 +1345,143 @@ def search_messages(message):
     except Exception as e:
         print(f"DEBUG - Error in search command: {str(e)}")
         bot.reply_to(message, "❌ Произошла ошибка при выполнении поиска")
+
+@bot.message_handler(func=lambda message: message.text == "⚙️ Настройки")
+def settings_menu(message):
+    """Показывает меню настроек"""
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        InlineKeyboardButton("📋 Формат сообщений", callback_data="settings_format"),
+        InlineKeyboardButton("⏰ Интервал проверки", callback_data="settings_interval"),
+        InlineKeyboardButton("🔔 Уведомления", callback_data="settings_notifications"),
+        InlineKeyboardButton("🎨 Тема интерфейса", callback_data="settings_theme")
+    )
+    
+    bot.reply_to(
+        message,
+        "⚙️ *Настройки*\n\nВыберите категорию настроек:",
+        parse_mode='Markdown',
+        reply_markup=keyboard
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('settings_'))
+def handle_settings(call):
+    """Обработчик настроек"""
+    setting = call.data.split('_')[1]
+    
+    if setting == 'format':
+        keyboard = InlineKeyboardMarkup(row_width=1)
+        current_format = user_message_format.get(call.from_user.id, 'full')
+        
+        for format_key, format_name in MESSAGE_FORMATS.items():
+            keyboard.add(InlineKeyboardButton(
+                f"{format_name} {'✅' if current_format == format_key else ''}",
+                callback_data=f"format_{format_key}"
+            ))
+        
+        bot.edit_message_text(
+            "📋 *Формат сообщений*\n\nВыберите предпочитаемый формат отображения писем:",
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=keyboard
+        )
+    
+    elif setting == 'interval':
+        keyboard = InlineKeyboardMarkup(row_width=2)
+        current_interval = check_intervals.get(call.from_user.id, 15)
+        
+        intervals = [15, 30, 60, 300]
+        for interval in intervals:
+            keyboard.add(InlineKeyboardButton(
+                f"{interval}с {'✅' if current_interval == interval else ''}",
+                callback_data=f"interval_{interval}"
+            ))
+        
+        bot.edit_message_text(
+            "⏰ *Интервал проверки*\n\nВыберите частоту проверки новых писем:",
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=keyboard
+        )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('copy_'))
+def copy_message_content(call):
+    """Копирование содержимого сообщения"""
+    try:
+        idx = int(call.data.split('_')[1]) - 1
+        user_id = call.from_user.id
+        
+        if user_id not in user_emails:
+            bot.answer_callback_query(call.id, "❌ Сообщение недоступно")
+            return
+            
+        email = next(iter(user_emails[user_id].keys()))
+        response = requests.get(f"{GET_MESSAGES_URL}?mail={email}")
+        messages = json.loads(response.text).get('messages', [])
+        
+        if idx >= len(messages):
+            bot.answer_callback_query(call.id, "❌ Сообщение не найдено")
+            return
+            
+        message = messages[idx]
+        content = message.get('body', '').strip()
+        
+        # Отправляем содержимое отдельным сообщением для удобного копирования
+        bot.send_message(
+            call.message.chat.id,
+            f"📋 *Текст сообщения:*\n`{content}`",
+            parse_mode='Markdown'
+        )
+        bot.answer_callback_query(call.id, "✅ Текст скопирован")
+        
+    except Exception as e:
+        print(f"DEBUG - Error copying message: {str(e)}")
+        bot.answer_callback_query(call.id, "❌ Ошибка при копировании")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('forward_'))
+def forward_message(call):
+    """Пересылка сообщения"""
+    # Здесь можно добавить логику пересылки
+    bot.answer_callback_query(call.id, "🔄 Функция пересылки будет доступна в следующем обновлении")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('save_'))
+def save_message(call):
+    """Сохранение сообщения"""
+    # Здесь можно добавить логику сохранения
+    bot.answer_callback_query(call.id, "💾 Функция сохранения будет доступна в следующем обновлении")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('check_'))
+def check_specific_mailbox(call):
+    """Проверка конкретного почтового ящика"""
+    try:
+        email = call.data.replace('check_', '')
+        user_id = call.from_user.id
+        
+        if user_id not in user_emails or email not in user_emails[user_id]:
+            bot.answer_callback_query(call.id, "❌ Почтовый ящик недоступен")
+            return
+            
+        checking_msg = bot.send_message(call.message.chat.id, f"🔄 Проверяю почту {email}...")
+        
+        # Создаем объект сообщения для проверки
+        message = Message(
+            message_id=call.message.message_id,
+            from_user=call.from_user,
+            date=call.message.date,
+            chat=call.message.chat,
+            content_type='text',
+            options={},
+            json_string=None
+        )
+        
+        get_messages(message)
+        bot.delete_message(call.message.chat.id, checking_msg.message_id)
+        
+    except Exception as e:
+        print(f"DEBUG - Error checking mailbox: {str(e)}")
+        bot.answer_callback_query(call.id, "❌ Ошибка при проверке почты")
 
 # Запуск бота
 if __name__ == '__main__':
