@@ -1148,18 +1148,30 @@ def format_message(msg, format_type='full', idx=None, total=None):
         
         # Паттерны для поиска кодов
         code_patterns = [
-            # Поиск кода после "Verification Code:"
-            r'Verification Code:?\s*([A-Za-z0-9]{8})',
-            # Поиск кода после "Code:"
-            r'Code:?\s*([A-Za-z0-9]{8})',
-            # Поиск кода в формате Me1ApCeu (начинается с Me)
-            r'Me[A-Za-z0-9]{6}',
-            # Общий поиск 8-символьных кодов
-            r'(?:^|\s)([A-Za-z0-9]{8})(?:\s|$)',
-            # Поиск кода в начале строки
-            r'^([A-Za-z0-9]{8})\s',
-            # Поиск кода после двоеточия
-            r':\s*([A-Za-z0-9]{8})'
+            # Поиск кода после ключевых слов с двоеточием
+            r'(?:Verification Code|Code|Код|Token|Verification|Authentication Code|Auth Code|Код подтверждения):?\s*([A-Za-z0-9]{6,12})',
+            
+            # Поиск кода в тексте с ключевыми словами
+            r'(?:code|код|verify|token|auth)[:\s]+([A-Za-z0-9]{6,12})',
+            
+            # Поиск кодов определенного формата
+            r'Me[A-Za-z0-9]{6}',  # Формат Me + 6 символов
+            r'[A-Z][a-z][A-Z][a-z][A-Z]\d[a-z]\d',  # Формат чередования букв и цифр
+            r'[A-Za-z]\d[A-Za-z]\d[A-Za-z]\d[A-Za-z]\d',  # Формат буква-цифра
+            
+            # Общий поиск кодов разной длины
+            r'(?:^|\s)([A-Za-z0-9]{6,12})(?:\s|$)',  # Коды от 6 до 12 символов
+            
+            # Поиск кодов в скобках или кавычках
+            r'[\(\[\{]([A-Za-z0-9]{6,12})[\)\]\}]',
+            r'["\']([A-Za-z0-9]{6,12})["\']',
+            
+            # Поиск кодов с дефисами или точками
+            r'[A-Za-z0-9]{3,4}[-_.][A-Za-z0-9]{3,4}',
+            
+            # Специальные форматы
+            r'(?:^|\s)([A-Z]{2}\d{2}[A-Z]{2}\d{2})',  # Формат AANN-AANN
+            r'(?:^|\s)([A-Za-z]{2}\d{6})',  # Формат AA-NNNNNN
         ]
         
         print(f"DEBUG - Original message content: {msg_content}")
@@ -1176,13 +1188,20 @@ def format_message(msg, format_type='full', idx=None, total=None):
         
         # Фильтруем найденные коды
         filtered_codes = []
+        excluded_words = [
+            'http', 'www', 'support', 'complete', 'generate', 'email', 
+            'mail', 'contact', 'please', 'thank', 'regards', 'best'
+        ]
+        
         for code in verification_codes:
             # Проверяем базовые условия
-            if (len(code) == 8 and  # Длина кода должна быть 8 символов
+            if (len(code) >= 6 and len(code) <= 12 and  # Длина кода от 6 до 12 символов
                 not '@' in code and  # Не должен быть частью email
-                not any(word in code.lower() for word in ['http', 'www', 'support']) and  # Не должен быть частью URL или других слов
-                not code.lower().startswith('complete') and  # Исключаем слово complete
-                not code.lower().startswith('generate')):   # Исключаем слово generate
+                not any(word in code.lower() for word in excluded_words) and  # Не должен содержать исключенные слова
+                # Должен содержать хотя бы одну цифру или заглавную букву
+                any(c.isupper() or c.isdigit() for c in code) and
+                # Не должен быть простым словом
+                not code.isalpha()):
                 filtered_codes.append(code)
                 print(f"DEBUG - Filtered code: {code}")
         
