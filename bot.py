@@ -1054,17 +1054,20 @@ def format_message(msg, format_type='full', idx=None, total=None):
         msg_content = re.sub(r'<style.*?</style>', '', msg_content, flags=re.DOTALL)
         msg_content = re.sub(r'<script.*?</script>', '', msg_content, flags=re.DOTALL)
         
-        # Извлекаем ссылки и кнопки до удаления HTML
-        links = re.findall(r'href=[\'"]?([^\'" >]+)', msg_content)
-        buttons = re.findall(r'<button[^>]*>(.*?)</button>', msg_content, re.DOTALL)
+        # Извлекаем ссылки до удаления HTML, сохраняя их целостность
+        links = []
+        for match in re.finditer(r'href=[\'"]([^\'"]+)[\'"]', msg_content):
+            link = match.group(1).strip()
+            # Удаляем пробелы и переносы строк внутри ссылки
+            link = ''.join(link.split())
+            if link:
+                links.append(link)
         
         print(f"DEBUG - Found raw links: {links}")
         
         # Фильтруем и валидируем ссылки
         valid_links = []
         for link in links:
-            # Удаляем пробелы и специальные символы
-            link = link.strip()
             # Проверяем базовую структуру URL
             if not re.match(r'^https?://', link):
                 if not link.startswith(('javascript:', 'data:', 'file:', 'ftp:', 'mailto:')):
@@ -1080,11 +1083,17 @@ def format_message(msg, format_type='full', idx=None, total=None):
                 
             try:
                 # Дополнительная проверка структуры URL
-                from urllib.parse import urlparse
+                from urllib.parse import urlparse, urljoin
                 parsed = urlparse(link)
                 if all([parsed.scheme, parsed.netloc]):
-                    valid_links.append(link)
-                    print(f"DEBUG - Valid link added: {link}")
+                    # Собираем ссылку обратно без пробелов и переносов
+                    clean_link = urljoin(parsed.scheme + '://' + parsed.netloc, parsed.path)
+                    if parsed.query:
+                        clean_link += '?' + parsed.query
+                    if parsed.fragment:
+                        clean_link += '#' + parsed.fragment
+                    valid_links.append(clean_link)
+                    print(f"DEBUG - Valid link added: {clean_link}")
                 else:
                     print(f"DEBUG - Invalid URL structure: {link}")
             except Exception as e:
@@ -1121,13 +1130,6 @@ def format_message(msg, format_type='full', idx=None, total=None):
         msg_keyboard = InlineKeyboardMarkup()
 
         # Добавляем кнопки из HTML, если есть
-        if buttons:
-            message_text += "\n\n🔘 Кнопки в письме:"
-            for button in buttons:
-                button_text = button.strip().replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
-                message_text += f"\n• {button_text}"
-
-        # Добавляем ссылки как кнопки
         if valid_links:
             message_text += "\n\n🔗 Ссылки для входа:"
             for i, link in enumerate(valid_links):
