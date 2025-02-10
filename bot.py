@@ -1148,11 +1148,16 @@ def format_message(msg, format_type='full', idx=None, total=None):
         
         # Паттерны для поиска кодов
         code_patterns = [
+            # Поиск цифровых кодов
+            r'(?:digit code|код|code)[:\s]+(\d{4,8})',  # Цифровой код после ключевых слов
+            r'(?:^|\s)(\d{6})(?:\s|$)',  # 6-значный цифровой код
+            r'(?:^|\s)(\d{4,8})(?:\s|$)',  # Цифровой код от 4 до 8 цифр
+            
             # Поиск кода после ключевых слов с двоеточием
-            r'(?:Verification Code|Code|Код|Token|Verification|Authentication Code|Auth Code|Код подтверждения):?\s*([A-Za-z0-9]{6,12})',
+            r'(?:Verification Code|Code|Код|Token|Verification|Authentication Code|Auth Code|Код подтверждения):?\s*([A-Za-z0-9]{4,12})',
             
             # Поиск кода в тексте с ключевыми словами
-            r'(?:code|код|verify|token|auth)[:\s]+([A-Za-z0-9]{6,12})',
+            r'(?:code|код|verify|token|auth)[:\s]+([A-Za-z0-9]{4,12})',
             
             # Поиск кодов определенного формата
             r'Me[A-Za-z0-9]{6}',  # Формат Me + 6 символов
@@ -1160,18 +1165,22 @@ def format_message(msg, format_type='full', idx=None, total=None):
             r'[A-Za-z]\d[A-Za-z]\d[A-Za-z]\d[A-Za-z]\d',  # Формат буква-цифра
             
             # Общий поиск кодов разной длины
-            r'(?:^|\s)([A-Za-z0-9]{6,12})(?:\s|$)',  # Коды от 6 до 12 символов
+            r'(?:^|\s)([A-Za-z0-9]{4,12})(?:\s|$)',  # Коды от 4 до 12 символов
             
             # Поиск кодов в скобках или кавычках
-            r'[\(\[\{]([A-Za-z0-9]{6,12})[\)\]\}]',
-            r'["\']([A-Za-z0-9]{6,12})["\']',
+            r'[\(\[\{]([A-Za-z0-9]{4,12})[\)\]\}]',
+            r'["\']([A-Za-z0-9]{4,12})["\']',
             
             # Поиск кодов с дефисами или точками
-            r'[A-Za-z0-9]{3,4}[-_.][A-Za-z0-9]{3,4}',
+            r'[A-Za-z0-9]{2,4}[-_.][A-Za-z0-9]{2,4}',
             
             # Специальные форматы
             r'(?:^|\s)([A-Z]{2}\d{2}[A-Z]{2}\d{2})',  # Формат AANN-AANN
             r'(?:^|\s)([A-Za-z]{2}\d{6})',  # Формат AA-NNNNNN
+            
+            # Токены и длинные коды
+            r'token=([A-Za-z0-9_-]{10,})',  # Токены после token=
+            r'(?:^|\s)([A-Za-z0-9]{32})(?:\s|$)',  # 32-символьные коды
         ]
         
         print(f"DEBUG - Original message content: {msg_content}")
@@ -1195,11 +1204,11 @@ def format_message(msg, format_type='full', idx=None, total=None):
         
         for code in verification_codes:
             # Проверяем базовые условия
-            if (len(code) >= 6 and len(code) <= 12 and  # Длина кода от 6 до 12 символов
+            if (len(code) >= 4 and len(code) <= 32 and  # Длина кода от 4 до 32 символов
                 not '@' in code and  # Не должен быть частью email
                 not any(word in code.lower() for word in excluded_words) and  # Не должен содержать исключенные слова
-                # Должен содержать хотя бы одну цифру или заглавную букву
-                any(c.isupper() or c.isdigit() for c in code) and
+                # Должен содержать хотя бы одну цифру или заглавную букву, или быть полностью цифровым
+                (code.isdigit() or any(c.isupper() or c.isdigit() for c in code)) and
                 # Не должен быть простым словом
                 not code.isalpha()):
                 filtered_codes.append(code)
