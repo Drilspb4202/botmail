@@ -1054,20 +1054,24 @@ def format_message(msg, format_type='full', idx=None, total=None):
         msg_content = re.sub(r'<style.*?</style>', '', msg_content, flags=re.DOTALL)
         msg_content = re.sub(r'<script.*?</script>', '', msg_content, flags=re.DOTALL)
         
-        # Извлекаем ссылки до удаления HTML, сохраняя их целостность
+        # Извлекаем ссылки до удаления HTML
         links = []
         for match in re.finditer(r'href=[\'"]([^\'"]+)[\'"]', msg_content):
             link = match.group(1).strip()
             # Удаляем пробелы и переносы строк внутри ссылки
             link = ''.join(link.split())
             if link:
-                links.append(link)
-        
+                # Проверяем, является ли это ссылкой верификации
+                if 'verify' in link.lower() or 'confirm' in link.lower() or 'validate' in link.lower():
+                    links.insert(0, ('✅ Ссылка для подтверждения', link))
+                else:
+                    links.append(('🔗 ' + (link[:30] + '...' if len(link) > 30 else link), link))
+
         print(f"DEBUG - Found raw links: {links}")
         
         # Фильтруем и валидируем ссылки
         valid_links = []
-        for link in links:
+        for link_title, link in links:
             # Проверяем базовую структуру URL
             if not re.match(r'^https?://', link):
                 if not link.startswith(('javascript:', 'data:', 'file:', 'ftp:', 'mailto:')):
@@ -1092,7 +1096,7 @@ def format_message(msg, format_type='full', idx=None, total=None):
                         clean_link += '?' + parsed.query
                     if parsed.fragment:
                         clean_link += '#' + parsed.fragment
-                    valid_links.append(clean_link)
+                    valid_links.append((link_title, clean_link))
                     print(f"DEBUG - Valid link added: {clean_link}")
                 else:
                     print(f"DEBUG - Invalid URL structure: {link}")
@@ -1131,18 +1135,16 @@ def format_message(msg, format_type='full', idx=None, total=None):
 
         # Добавляем кнопки из HTML, если есть
         if valid_links:
-            message_text += "\n\n🔗 Ссылки для входа:"
-            for i, link in enumerate(valid_links):
+            message_text += "\n\n🔗 Найденные ссылки:"
+            for title, link in valid_links:
                 try:
-                    # Создаем короткое имя для кнопки
-                    button_text = f"🔗 Ссылка {i+1}"
                     # Добавляем кнопку для каждой ссылки
-                    msg_keyboard.row(InlineKeyboardButton(text=button_text, url=link))
+                    msg_keyboard.row(InlineKeyboardButton(text=title, url=link))
                     print(f"DEBUG - Added button with URL: {link}")
                 except Exception as e:
                     print(f"DEBUG - Error adding URL button: {str(e)}, URL: {link}")
                     # Добавляем ссылку в текст сообщения вместо кнопки
-                    message_text += f"\n{button_text}: {link}"
+                    message_text += f"\n{title}: {link}"
                     continue
 
         # Улучшенный поиск кодов верификации
