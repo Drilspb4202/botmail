@@ -488,6 +488,8 @@ def create_new_mail(message):
 ⏳ Срок действия: {time.strftime('%H:%M:%S %d.%m.%Y', time.localtime(expired_at))}
 ♻️ Почта будет автоматически удалена через 24 часа
 
+🔄 Автоматическая проверка входящих писем каждые 15 секунд
+
 📬 Используйте кнопку 📋 Список писем для просмотра всех ваших активных ящиков."""
                 bot.reply_to(message, response_text, parse_mode='Markdown')
             else:
@@ -1291,21 +1293,8 @@ def cleanup_expired_emails():
                 # Останавливаем проверку для устаревшего ящика
                 if user_id in check_timers and email in check_timers[user_id]:
                     stop_checking_email(user_id, email)
-                
-                # Уведомляем пользователя
-                remaining_minutes = int((expired_at - current_time) / 60) if expired_at else 0
-                if remaining_minutes > 0:
-                    notification_text = f"""
-⚠️ Внимание! Срок действия почтового ящика истекает через {remaining_minutes} минут.
-📧 Email: `{email}`
-
-🔐 Пароль: `{email_data['password']}`
-
-⏳ Срок действия: {time.strftime('%H:%M:%S %d.%m.%Y', time.localtime(expired_at))}
-♻️ Почта будет автоматически удалена через {remaining_minutes} минут."""
-                    bot.send_message(user_id, notification_text, parse_mode='Markdown')
             except Exception as e:
-                print(f"DEBUG - Error sending notification: {str(e)}")
+                print(f"DEBUG - Error stopping check: {str(e)}")
 
 # Запускаем периодическую очистку каждую минуту
 def cleanup_loop():
