@@ -1148,42 +1148,39 @@ def format_message(msg, format_type='full', idx=None, total=None):
         
         # Паттерны для поиска кодов
         code_patterns = [
-            # Основной паттерн для кодов (буквы любого регистра и цифры)
-            r'(?<![a-zA-Z0-9])[a-zA-Z0-9]{6,8}(?![a-zA-Z0-9])',
-            # Поиск кодов после ключевых слов
-            r'(?:code|код|verify|token|Code|Verification)[:\s]+([a-zA-Z0-9]{4,8})',
-            # Поиск кодов в начале строки
-            r'(?m)^[a-zA-Z0-9]{6,8}(?:\s|$)',
-            # Поиск кодов в конце предложения
-            r'[a-zA-Z0-9]{6,8}(?:[.!?]|\s|$)',
-            # Поиск кодов в скобках
-            r'\(([a-zA-Z0-9]{6,8})\)',
-            r'\[([a-zA-Z0-9]{6,8})\]',
-            # Поиск конкретного формата кода (8 символов, буквы и цифры)
-            r'[a-zA-Z][A-Z][a-zA-Z][rR][A-Z0-9][0-9][oO][A-Z0-9]'
+            # Поиск кода после слова "Verification Code:"
+            r'Verification Code:?\s*([a-zA-Z0-9]{8})',
+            # Поиск кода после слова "code"
+            r'code:?\s*([a-zA-Z0-9]{8})',
+            # Общий поиск 8-символьных кодов
+            r'(?:^|\s)([a-zA-Z0-9]{8})(?:\s|$)',
+            # Поиск кода в тексте
+            r'(?:^|\s)([a-zA-Z][A-Za-z0-9]{7})(?:\s|$)'
         ]
         
         # Применяем каждый паттерн
         for pattern in code_patterns:
-            matches = re.finditer(pattern, msg_content, re.MULTILINE)
+            matches = re.finditer(pattern, msg_content, re.MULTILINE | re.IGNORECASE)
             for match in matches:
                 code = match.group(1) if len(match.groups()) > 0 else match.group(0)
-                if code and len(code) >= 4:  # Проверяем минимальную длину
+                code = code.strip()
+                if code:
+                    print(f"DEBUG - Found code: {code}")
                     verification_codes.append(code)
         
         # Фильтруем найденные коды
         filtered_codes = []
         for code in verification_codes:
-            code = code.strip()
-            # Проверяем, что код не является частью ссылки или email
-            if (not any(code in link for link in valid_links) and 
-                '@' not in code and 
-                not any(word in code.lower() for word in ['http', 'www']) and
-                not re.match(r'^\d{5}$', code)):  # исключаем почтовые индексы
+            # Проверяем базовые условия
+            if (len(code) == 8 and  # Длина кода должна быть 8 символов
+                not '@' in code and  # Не должен быть частью email
+                not any(word in code.lower() for word in ['http', 'www'])):  # Не должен быть частью URL
                 filtered_codes.append(code)
+                print(f"DEBUG - Filtered code: {code}")
         
         # Удаляем дубликаты и сортируем
         filtered_codes = sorted(set(filtered_codes))
+        print(f"DEBUG - Final codes: {filtered_codes}")
         
         if filtered_codes:
             message_text += "\n\n🔑 Коды подтверждения:"
