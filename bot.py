@@ -130,7 +130,7 @@ def get_messages(message):
             print(f"DEBUG - No active emails for user {user_id}")
             bot.reply_to(message, "❌ У вас нет активной почты. Создайте новую с помощью кнопки 📧 Создать почту")
             return
-
+        
         checking_msg = bot.reply_to(message, "⏳ Проверяю сообщения...")
         
         try:
@@ -145,9 +145,9 @@ def get_messages(message):
             email_data = user_emails[user_id][email]
             print(f"DEBUG - Checking email: {email}")
             
-            url = f"{GET_MESSAGES_URL}?mail={email}"
+        url = f"{GET_MESSAGES_URL}?mail={email}"
             print(f"DEBUG - Request URL: {url}")
-            
+        
             response = requests.get(url, timeout=10)
             print(f"DEBUG - Response status: {response.status_code}")
             print(f"DEBUG - Response text: {response.text}")
@@ -159,55 +159,55 @@ def get_messages(message):
                 bot.delete_message(message.chat.id, checking_msg.message_id)
                 return
 
-            data = json.loads(response.text)
-            if not isinstance(data, dict):
+                data = json.loads(response.text)
+                if not isinstance(data, dict):
                 print(f"DEBUG - Invalid response format: {data}")
-                raise ValueError("Неверный формат данных от сервера")
-                
-            messages = data.get('messages', [])
+                    raise ValueError("Неверный формат данных от сервера")
+                    
+                messages = data.get('messages', [])
             print(f"DEBUG - Found {len(messages)} messages")
             
-            if not messages:
-                bot.reply_to(message, "📭 У вас пока нет сообщений.")
-                bot.delete_message(message.chat.id, checking_msg.message_id)
-                return
-                
+                if not messages:
+                    bot.reply_to(message, "📭 У вас пока нет сообщений.")
+                    bot.delete_message(message.chat.id, checking_msg.message_id)
+                    return
+                    
             # Инициализируем множество прочитанных сообщений для пользователя
-            if user_id not in user_read_messages:
-                user_read_messages[user_id] = set()
+                if user_id not in user_read_messages:
+                    user_read_messages[user_id] = set()
 
-            # Отмечаем все сообщения как прочитанные
-            for msg in messages:
-                msg_id = msg.get('id', '')
-                if msg_id:
-                    user_read_messages[user_id].add(msg_id)
-                    update_stats(user_id, 'message_received')
+                # Отмечаем все сообщения как прочитанные
+                for msg in messages:
+                    msg_id = msg.get('id', '')
+                    if msg_id:
+                        user_read_messages[user_id].add(msg_id)
+                        update_stats(user_id, 'message_received')
 
             # Всегда используем полный формат
             format_type = 'full'
 
-            for idx, msg in enumerate(messages, 1):
+                for idx, msg in enumerate(messages, 1):
                 message_text, msg_keyboard = format_message(msg, format_type, idx, len(messages))
-                msg_keyboard.row(
-                    InlineKeyboardButton("🗑 Удалить сообщение", callback_data=f"del_{idx}")
-                )
+                    msg_keyboard.row(
+                        InlineKeyboardButton("🗑 Удалить сообщение", callback_data=f"del_{idx}")
+                        )
 
-                try:
-                    bot.send_message(message.chat.id, message_text, parse_mode='Markdown', reply_markup=msg_keyboard)
-                except Exception as e:
-                    print(f"DEBUG - Error sending message {idx}: {str(e)}")
                     try:
+                        bot.send_message(message.chat.id, message_text, parse_mode='Markdown', reply_markup=msg_keyboard)
+                    except Exception as e:
+                        print(f"DEBUG - Error sending message {idx}: {str(e)}")
+                        try:
                         short_message, short_keyboard = format_message(msg, 'compact', idx, len(messages))
                         bot.send_message(message.chat.id, short_message, reply_markup=short_keyboard)
-                    except Exception as e2:
-                        print(f"DEBUG - Error sending short message {idx}: {str(e2)}")
+                        except Exception as e2:
+                            print(f"DEBUG - Error sending short message {idx}: {str(e2)}")
 
-            bot.delete_message(message.chat.id, checking_msg.message_id)
-                
-        except json.JSONDecodeError as e:
-            print(f"DEBUG - JSON Parse Error: {str(e)}, Response: {response.text}")
-            bot.reply_to(message, "❌ Ошибка при разборе ответа сервера. Возможно, почтовый сервис временно недоступен.")
-            bot.delete_message(message.chat.id, checking_msg.message_id)
+                    bot.delete_message(message.chat.id, checking_msg.message_id)
+                    
+            except json.JSONDecodeError as e:
+                print(f"DEBUG - JSON Parse Error: {str(e)}, Response: {response.text}")
+                bot.reply_to(message, "❌ Ошибка при разборе ответа сервера. Возможно, почтовый сервис временно недоступен.")
+                bot.delete_message(message.chat.id, checking_msg.message_id)
                 
         except requests.exceptions.RequestException as e:
             print(f"DEBUG - Request Error: {str(e)}")
@@ -442,7 +442,7 @@ def create_new_mail(message):
     """Создание нового временного email адреса"""
     try:
         user_id = message.from_user.id
-        
+
         print(f"DEBUG - Trying to create new email...")
         print(f"DEBUG - API URL: {GET_MAIL_URL}")
 
@@ -468,9 +468,9 @@ def create_new_mail(message):
                 # Сохраняем email данные
                 user_emails[user_id] = {
                     email: {
-                        'email': email,
-                        'password': password,
-                        'expired_at': expired_at
+                    'email': email,
+                    'password': password,
+                    'expired_at': expired_at
                     }
                 }
                 
@@ -500,7 +500,7 @@ def create_new_mail(message):
         except json.JSONDecodeError as e:
             print(f"DEBUG - JSON Parse Error: {str(e)}")
             bot.reply_to(message, "❌ Ошибка при разборе ответа сервера. Возможно, сервис временно недоступен.",
-                       reply_markup=create_main_keyboard())
+                   reply_markup=create_main_keyboard())
     except Exception as e:
         print(f"DEBUG - Unexpected Error: {str(e)}")
         bot.reply_to(message, f"❌ Произошла неожиданная ошибка: {str(e)}",
@@ -596,7 +596,7 @@ def show_mailbox_messages(call):
         
         if user_id not in user_emails or email not in user_emails[user_id]:
             bot.answer_callback_query(call.id, "❌ Этот почтовый ящик больше не доступен")
-            return
+        return
             
         checking_msg = bot.send_message(call.message.chat.id, "⏳ Проверяю сообщения...")
         
@@ -699,22 +699,22 @@ def delete_mailbox(call):
         user_id = call.from_user.id
         
         if user_id in user_emails and email in user_emails[user_id]:
-            # Останавливаем проверку
+        # Останавливаем проверку
             if user_id in check_timers and email in check_timers[user_id]:
                 stop_checking_email(user_id, email)
-            
-            # Удаляем email и историю прочитанных сообщений
+        
+        # Удаляем email и историю прочитанных сообщений
             del user_emails[user_id][email]
             if user_id in user_read_messages and email in user_read_messages[user_id]:
                 del user_read_messages[user_id][email]
             
             # Если у пользователя не осталось ящиков, удаляем его запись
             if not user_emails[user_id]:
-                del user_emails[user_id]
+        del user_emails[user_id]
             
             bot.answer_callback_query(call.id, f"✅ Почтовый ящик {email} успешно удален!")
             bot.delete_message(call.message.chat.id, call.message.message_id)
-        else:
+    else:
             bot.answer_callback_query(call.id, "❌ Этот почтовый ящик уже недоступен")
             bot.delete_message(call.message.chat.id, call.message.message_id)
     except Exception as e:
@@ -810,7 +810,7 @@ def check_messages_job(chat_id, email):
                             # Всегда используем полный формат
                             format_type = 'full'
                             message_text, msg_keyboard = format_message(msg, format_type, 1, 1)
-                            
+
                             try:
                                 # Отправляем сообщение
                                 bot.send_message(
@@ -863,7 +863,7 @@ def start_checking(message, email=None):
 def start_email_checking(chat_id, email):
     """Запускает проверку конкретного почтового ящика"""
     interval = check_intervals.get(chat_id, 15)
-    
+        
     def check_loop():
         while chat_id in check_timers and email in check_timers[chat_id]:
             check_messages_job(chat_id, email)
@@ -882,7 +882,7 @@ def stop_checking(message, email=None):
             # Останавливаем проверку всех ящиков
             for email in list(check_timers[chat_id].keys()):
                 stop_checking_email(chat_id, email)
-            del check_timers[chat_id]
+        del check_timers[chat_id]
             bot.reply_to(message, "✅ Автоматическая проверка остановлена для всех ящиков")
         else:
             # Останавливаем проверку конкретного ящика
@@ -1046,13 +1046,13 @@ def delete_message_handler(call):
 def format_message(msg, format_type='full', idx=None, total=None):
     try:
         # Получаем содержимое письма
-        msg_content = msg.get('body_html', '') or msg.get('body', '')
+    msg_content = msg.get('body_html', '') or msg.get('body', '')
         if not msg_content:
             msg_content = "Текст письма отсутствует"
             
         # Очищаем HTML
-        msg_content = re.sub(r'<style.*?</style>', '', msg_content, flags=re.DOTALL)
-        msg_content = re.sub(r'<script.*?</script>', '', msg_content, flags=re.DOTALL)
+    msg_content = re.sub(r'<style.*?</style>', '', msg_content, flags=re.DOTALL)
+    msg_content = re.sub(r'<script.*?</script>', '', msg_content, flags=re.DOTALL)
         
         # Извлекаем ссылки до удаления HTML
         links = []
@@ -1107,17 +1107,17 @@ def format_message(msg, format_type='full', idx=None, total=None):
         print(f"DEBUG - Valid links after filtering: {valid_links}")
         
         # Удаляем оставшиеся HTML теги
-        msg_content = re.sub(r'<[^>]+>', ' ', msg_content)
-        msg_content = re.sub(r'\s+', ' ', msg_content)
-        msg_content = msg_content.strip()
-        
+    msg_content = re.sub(r'<[^>]+>', ' ', msg_content)
+    msg_content = re.sub(r'\s+', ' ', msg_content)
+    msg_content = msg_content.strip()
+    
         # Безопасное получение данных
         from_field = msg.get('from', 'Неизвестно')
         subject = msg.get('subject', 'Без темы')
         date = msg.get('date', 'Не указана')
         
         # Экранируем специальные символы Markdown
-        msg_content = msg_content.replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
+    msg_content = msg_content.replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
         from_field = from_field.replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
         subject = subject.replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
         
@@ -1266,13 +1266,13 @@ def cleanup_expired_emails():
             expired_at = email_data.get('expired_at')
             if expired_at is None or current_time > expired_at:
                 expired_emails.append(email)
-                
-                try:
-                    # Останавливаем проверку для устаревшего ящика
+            
+            try:
+                # Останавливаем проверку для устаревшего ящика
                     if user_id in check_timers and email in check_timers[user_id]:
                         stop_checking_email(user_id, email)
                     
-                    # Уведомляем пользователя
+                # Уведомляем пользователя
                     remaining_minutes = int((expired_at - current_time) / 60) if expired_at else 0
                     if remaining_minutes > 0:
                         notification_text = f"""
