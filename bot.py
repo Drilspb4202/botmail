@@ -1146,100 +1146,35 @@ def format_message(msg, format_type='full', idx=None, total=None):
         # Улучшенный поиск кодов верификации
         verification_codes = []
         
-        # Паттерны для поиска кодов
+        # Сначала ищем цифровые коды напрямую в тексте
+        numeric_codes = re.findall(r'(?<!\d)(\d{6})(?!\d)', msg_content)
+        verification_codes.extend(numeric_codes)
+        
+        # Затем ищем коды после ключевых слов
         code_patterns = [
-            # Поиск цифровых кодов
-            r'(?:digit code|код|code|pin|пин-код|пин|код подтверждения)[:\s]+(\d{4,8})',  # Цифровой код после ключевых слов
-            r'(?:^|\s|:|-)(\d{6})(?:\s|$|\.|\?|!|,)',  # 6-значный цифровой код
-            r'(?:^|\s|:|-)(\d{4,8})(?:\s|$|\.|\?|!|,)',  # Цифровой код от 4 до 8 цифр
-            
-            # Поиск кода после ключевых слов с двоеточием
-            r'(?:Verification Code|Code|Код|Token|Verification|Authentication Code|Auth Code|Код подтверждения|Confirmation Code|Security Code|Secure Code|Access Code|OTP|One-Time Password|One Time Code):?\s*([A-Za-z0-9]{4,12})',
-            
-            # Поиск кода в тексте с ключевыми словами
-            r'(?:code|код|verify|token|auth|pin)[:\s]+([A-Za-z0-9]{4,12})',
-            
-            # Поиск кодов определенного формата
-            r'Me[A-Za-z0-9]{6}',  # Формат Me + 6 символов
-            r'[A-Z][a-z][A-Z][a-z][A-Z]\d[a-z]\d',  # Формат чередования букв и цифр
-            r'[A-Za-z]\d[A-Za-z]\d[A-Za-z]\d[A-Za-z]\d',  # Формат буква-цифра
-            r'[A-Z]{2}\d{4}[A-Z]{2}',  # Формат AANNAA
-            
-            # Общий поиск кодов разной длины
-            r'(?:^|\s|:|-|\()([A-Za-z0-9]{4,12})(?:\s|$|\.|\?|!|,|\))',  # Коды от 4 до 12 символов
-            
-            # Поиск кодов в скобках или кавычках
-            r'[\(\[\{]([A-Za-z0-9]{4,12})[\)\]\}]',
-            r'["\']([A-Za-z0-9]{4,12})["\']',
-            r'["\'](\d{4,8})["\']',  # Цифровые коды в кавычках
-            
-            # Поиск кодов с дефисами или точками
-            r'[A-Za-z0-9]{2,4}[-_.][A-Za-z0-9]{2,4}',
-            r'\d{3}[-_.]\d{3}',  # Цифровые коды с разделителем
-            
-            # Специальные форматы
-            r'(?:^|\s)([A-Z]{2}\d{2}[A-Z]{2}\d{2})',  # Формат AANN-AANN
-            r'(?:^|\s)([A-Za-z]{2}\d{6})',  # Формат AA-NNNNNN
-            r'(?:^|\s)([A-Z]{2}\d{6}[A-Z]{2})',  # Формат AANNNNNNAA
-            
-            # Токены и длинные коды
-            r'token=([A-Za-z0-9_-]{10,})',  # Токены после token=
-            r'(?:^|\s)([A-Za-z0-9]{32})(?:\s|$)',  # 32-символьные коды
-            r'(?:^|\s)([A-Za-z0-9+/]{32,})(?:\s|$)',  # Base64 токены
-            
-            # Контекстный поиск
-            r'enter[:\s]+(?:the\s+)?(?:code|pin)?[:\s]*([A-Za-z0-9]{4,12})',
-            r'use[:\s]+(?:the\s+)?(?:code|pin)?[:\s]*([A-Za-z0-9]{4,12})',
-            r'your[:\s]+(?:code|pin)[:\s]+(?:is|:)[:\s]*([A-Za-z0-9]{4,12})',
+            r'(?:code|код|verify|token|auth|pin)[:\s]+(\d{6})',
+            r'(?:enter|введите)[:\s]+(?:the\s+)?(?:code|pin|код)?[:\s]*(\d{6})',
+            r'(?:verification|confirmation)[:\s]+(?:code|pin|код)?[:\s]*(\d{6})',
+            r'(?:your|ваш)[:\s]+(?:code|pin|код)[:\s]+(?:is|:)[:\s]*(\d{6})',
+            r'(?<!\d)(\d{6})(?!\d)',  # Изолированный 6-значный код
         ]
         
-        print(f"DEBUG - Original message content: {msg_content}")
-        
-        # Применяем каждый паттерн
         for pattern in code_patterns:
             matches = re.finditer(pattern, msg_content, re.MULTILINE | re.IGNORECASE)
             for match in matches:
                 code = match.group(1) if len(match.groups()) > 0 else match.group(0)
                 code = code.strip()
-                if code:
-                    print(f"DEBUG - Found code with pattern {pattern}: {code}")
+                if code and code.isdigit() and len(code) == 6:
                     verification_codes.append(code)
-        
-        # Фильтруем найденные коды
-        filtered_codes = []
-        excluded_words = [
-            'http', 'www', 'support', 'complete', 'generate', 'email', 
-            'mail', 'contact', 'please', 'thank', 'regards', 'best',
-            'click', 'link', 'visit', 'website', 'account', 'help',
-            'info', 'login', 'sign', 'page'
-        ]
-        
-        for code in verification_codes:
-            # Проверяем базовые условия
-            if (len(code) >= 4 and len(code) <= 32 and  # Длина кода от 4 до 32 символов
-                not '@' in code and  # Не должен быть частью email
-                not any(word in code.lower() for word in excluded_words) and  # Не должен содержать исключенные слова
-                # Должен содержать хотя бы одну цифру или заглавную букву, или быть полностью цифровым
-                (code.isdigit() or any(c.isupper() or c.isdigit() for c in code)) and
-                # Не должен быть простым словом или содержать только буквы
-                not code.isalpha() and
-                # Дополнительные проверки для улучшения точности
-                not re.match(r'^[a-z]+$', code) and  # Не только маленькие буквы
-                not re.match(r'^[A-Z]+$', code) and  # Не только большие буквы
-                # Проверка на типичные форматы кодов
-                (re.match(r'^\d+$', code) or  # Только цифры
-                 re.match(r'^[A-Za-z0-9]+$', code) or  # Буквы и цифры
-                 re.match(r'^[A-Za-z0-9_-]+$', code))):  # Буквы, цифры и спец. символы
-                filtered_codes.append(code)
-                print(f"DEBUG - Filtered code: {code}")
+                    print(f"DEBUG - Found numeric code: {code}")
         
         # Удаляем дубликаты и сортируем
-        filtered_codes = sorted(set(filtered_codes))
-        print(f"DEBUG - Final codes: {filtered_codes}")
+        verification_codes = sorted(set(verification_codes))
+        print(f"DEBUG - Final codes: {verification_codes}")
         
-        if filtered_codes:
+        if verification_codes:
             message_text += "\n\n🔑 Коды подтверждения:"
-            for code in filtered_codes:
+            for code in verification_codes:
                 message_text += f"\n`{code}`"
 
         # Добавляем кнопку удаления
