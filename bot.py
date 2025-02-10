@@ -122,7 +122,6 @@ def generate_random_name():
 
 def get_messages(message):
     """Получение и отображение сообщений"""
-    checking_msg = None
     try:
         user_id = message.from_user.id
         print(f"DEBUG - Checking messages for user {user_id}")
@@ -134,92 +133,87 @@ def get_messages(message):
 
         checking_msg = bot.reply_to(message, "⏳ Проверяю сообщения...")
         
-        # Получаем первый email из словаря пользователя
-        if not user_emails[user_id]:
-            print(f"DEBUG - Empty email dictionary for user {user_id}")
-            bot.reply_to(message, "❌ У вас нет активной почты. Создайте новую с помощью кнопки 📧 Создать почту")
-            bot.delete_message(message.chat.id, checking_msg.message_id)
-            return
+        try:
+            # Получаем первый email из словаря пользователя
+            if not user_emails[user_id]:
+                print(f"DEBUG - Empty email dictionary for user {user_id}")
+                bot.reply_to(message, "❌ У вас нет активной почты. Создайте новую с помощью кнопки 📧 Создать почту")
+                bot.delete_message(message.chat.id, checking_msg.message_id)
+                return
                 
-        email = next(iter(user_emails[user_id].keys()))
-        email_data = user_emails[user_id][email]
-        print(f"DEBUG - Checking email: {email}")
-        
-        url = f"{GET_MESSAGES_URL}?mail={email}"
-        print(f"DEBUG - Request URL: {url}")
-        
-        response = requests.get(url, timeout=10)
-        print(f"DEBUG - Response status: {response.status_code}")
-        print(f"DEBUG - Response text: {response.text}")
-        
-        response.raise_for_status()
-        
-        if not response.text.strip():
-            bot.reply_to(message, "📭 У вас пока нет сообщений.")
-            bot.delete_message(message.chat.id, checking_msg.message_id)
-            return
-
-        data = json.loads(response.text)
-        if not isinstance(data, dict):
-            print(f"DEBUG - Invalid response format: {data}")
-            raise ValueError("Неверный формат данных от сервера")
+            email = next(iter(user_emails[user_id].keys()))
+            email_data = user_emails[user_id][email]
+            print(f"DEBUG - Checking email: {email}")
             
-        messages = data.get('messages', [])
-        print(f"DEBUG - Found {len(messages)} messages")
-        
-        if not messages:
-            bot.reply_to(message, "📭 У вас пока нет сообщений.")
-            bot.delete_message(message.chat.id, checking_msg.message_id)
-            return
+            url = f"{GET_MESSAGES_URL}?mail={email}"
+            print(f"DEBUG - Request URL: {url}")
             
-        # Инициализируем множество прочитанных сообщений для пользователя
-        if user_id not in user_read_messages:
-            user_read_messages[user_id] = set()
+            response = requests.get(url, timeout=10)
+            print(f"DEBUG - Response status: {response.status_code}")
+            print(f"DEBUG - Response text: {response.text}")
+            
+            response.raise_for_status()
+            
+            if not response.text.strip():
+                bot.reply_to(message, "📭 У вас пока нет сообщений.")
+                bot.delete_message(message.chat.id, checking_msg.message_id)
+                return
 
-        # Отмечаем все сообщения как прочитанные
-        for msg in messages:
-            msg_id = msg.get('id', '')
-            if msg_id:
-                user_read_messages[user_id].add(msg_id)
-                update_stats(user_id, 'message_received')
+            data = json.loads(response.text)
+            if not isinstance(data, dict):
+                print(f"DEBUG - Invalid response format: {data}")
+                raise ValueError("Неверный формат данных от сервера")
+                
+            messages = data.get('messages', [])
+            print(f"DEBUG - Found {len(messages)} messages")
+            
+            if not messages:
+                bot.reply_to(message, "📭 У вас пока нет сообщений.")
+                bot.delete_message(message.chat.id, checking_msg.message_id)
+                return
+                
+            # Инициализируем множество прочитанных сообщений для пользователя
+            if user_id not in user_read_messages:
+                user_read_messages[user_id] = set()
 
-        # Всегда используем полный формат
-        format_type = 'full'
+            # Отмечаем все сообщения как прочитанные
+            for msg in messages:
+                msg_id = msg.get('id', '')
+                if msg_id:
+                    user_read_messages[user_id].add(msg_id)
+                    update_stats(user_id, 'message_received')
 
-        for idx, msg in enumerate(messages, 1):
-            message_text, msg_keyboard = format_message(msg, format_type, idx, len(messages))
-            msg_keyboard.row(
-                InlineKeyboardButton("🗑 Удалить сообщение", callback_data=f"del_{idx}")
-            )
+            # Всегда используем полный формат
+            format_type = 'full'
 
-            try:
-                bot.send_message(message.chat.id, message_text, parse_mode='Markdown', reply_markup=msg_keyboard)
-            except Exception as e:
-                print(f"DEBUG - Error sending message {idx}: {str(e)}")
+            for idx, msg in enumerate(messages, 1):
+                message_text, msg_keyboard = format_message(msg, format_type, idx, len(messages))
+                msg_keyboard.row(
+                    InlineKeyboardButton("🗑 Удалить сообщение", callback_data=f"del_{idx}")
+                )
+
                 try:
-                    short_message, short_keyboard = format_message(msg, 'compact', idx, len(messages))
-                    bot.send_message(message.chat.id, short_message, reply_markup=short_keyboard)
-                except Exception as e2:
-                    print(f"DEBUG - Error sending short message {idx}: {str(e2)}")
+                    bot.send_message(message.chat.id, message_text, parse_mode='Markdown', reply_markup=msg_keyboard)
+                except Exception as e:
+                    print(f"DEBUG - Error sending message {idx}: {str(e)}")
+                    try:
+                        short_message, short_keyboard = format_message(msg, 'compact', idx, len(messages))
+                        bot.send_message(message.chat.id, short_message, reply_markup=short_keyboard)
+                    except Exception as e2:
+                        print(f"DEBUG - Error sending short message {idx}: {str(e2)}")
 
-        bot.delete_message(message.chat.id, checking_msg.message_id)
+            bot.delete_message(message.chat.id, checking_msg.message_id)
                 
-    except json.JSONDecodeError as e:
-        print(f"DEBUG - JSON Parse Error: {str(e)}, Response: {response.text}")
-        bot.reply_to(message, "❌ Ошибка при разборе ответа сервера. Возможно, почтовый сервис временно недоступен.")
-        try:
+        except json.JSONDecodeError as e:
+            print(f"DEBUG - JSON Parse Error: {str(e)}, Response: {response.text}")
+            bot.reply_to(message, "❌ Ошибка при разборе ответа сервера. Возможно, почтовый сервис временно недоступен.")
             bot.delete_message(message.chat.id, checking_msg.message_id)
-        except:
-            pass
+                
+        except requests.exceptions.RequestException as e:
+            print(f"DEBUG - Request Error: {str(e)}")
+            bot.reply_to(message, "❌ Ошибка при получении сообщений. Сервер временно недоступен.")
+            bot.delete_message(message.chat.id, checking_msg.message_id)
             
-    except requests.exceptions.RequestException as e:
-        print(f"DEBUG - Request Error: {str(e)}")
-        bot.reply_to(message, "❌ Ошибка при получении сообщений. Сервер временно недоступен.")
-        try:
-            bot.delete_message(message.chat.id, checking_msg.message_id)
-        except:
-            pass
-        
     except Exception as e:
         print(f"DEBUG - Unexpected Error: {str(e)}")
         print(f"DEBUG - User emails state: {user_emails.get(message.from_user.id, 'No emails')}")
@@ -1050,7 +1044,6 @@ def delete_message_handler(call):
         bot.answer_callback_query(call.id, "❌ Ошибка при удалении сообщения")
 
 def format_message(msg, format_type='full', idx=None, total=None):
-    """Форматирует сообщение для отображения"""
     try:
         # Получаем содержимое письма
         msg_content = msg.get('body_html', '') or msg.get('body', '')
@@ -1061,46 +1054,60 @@ def format_message(msg, format_type='full', idx=None, total=None):
         msg_content = re.sub(r'<style.*?</style>', '', msg_content, flags=re.DOTALL)
         msg_content = re.sub(r'<script.*?</script>', '', msg_content, flags=re.DOTALL)
         
-        # Извлекаем ссылки до удаления HTML
+        # Извлекаем ссылки до удаления HTML, сохраняя их целостность
         links = []
         for match in re.finditer(r'href=[\'"]([^\'"]+)[\'"]', msg_content):
             link = match.group(1).strip()
-            link = ''.join(link.split())  # Удаляем пробелы и переносы
+            # Удаляем пробелы и переносы строк внутри ссылки
+            link = ''.join(link.split())
             if link:
                 links.append(link)
+        
+        print(f"DEBUG - Found raw links: {links}")
         
         # Фильтруем и валидируем ссылки
         valid_links = []
         for link in links:
+            # Проверяем базовую структуру URL
             if not re.match(r'^https?://', link):
                 if not link.startswith(('javascript:', 'data:', 'file:', 'ftp:', 'mailto:')):
                     link = 'https://' + link
                 else:
+                    print(f"DEBUG - Skipping invalid protocol link: {link}")
                     continue
                     
+            # Проверяем, что URL содержит допустимый домен
             if not re.match(r'^https?://[a-zA-Z0-9-_.]+\.[a-zA-Z]{2,}', link):
+                print(f"DEBUG - Invalid domain in link: {link}")
                 continue
                 
             try:
+                # Дополнительная проверка структуры URL
                 from urllib.parse import urlparse, urljoin
                 parsed = urlparse(link)
                 if all([parsed.scheme, parsed.netloc]):
+                    # Собираем ссылку обратно без пробелов и переносов
                     clean_link = urljoin(parsed.scheme + '://' + parsed.netloc, parsed.path)
                     if parsed.query:
                         clean_link += '?' + parsed.query
                     if parsed.fragment:
                         clean_link += '#' + parsed.fragment
                     valid_links.append(clean_link)
+                    print(f"DEBUG - Valid link added: {clean_link}")
+                else:
+                    print(f"DEBUG - Invalid URL structure: {link}")
             except Exception as e:
                 print(f"DEBUG - URL parsing error: {str(e)} for link: {link}")
                 continue
+        
+        print(f"DEBUG - Valid links after filtering: {valid_links}")
         
         # Удаляем оставшиеся HTML теги
         msg_content = re.sub(r'<[^>]+>', ' ', msg_content)
         msg_content = re.sub(r'\s+', ' ', msg_content)
         msg_content = msg_content.strip()
         
-        # Получаем основные данные письма
+        # Безопасное получение данных
         from_field = msg.get('from', 'Неизвестно')
         subject = msg.get('subject', 'Без темы')
         date = msg.get('date', 'Не указана')
@@ -1119,35 +1126,39 @@ def format_message(msg, format_type='full', idx=None, total=None):
 📝 Текст письма:
 {msg_content}"""
 
-        # Создаем клавиатуру
+        # Создаем клавиатуру для сообщения
         msg_keyboard = InlineKeyboardMarkup()
 
-        # Добавляем ссылки
+        # Добавляем кнопки из HTML, если есть
         if valid_links:
             message_text += "\n\n🔗 Ссылки для входа:"
             for i, link in enumerate(valid_links):
                 try:
+                    # Создаем короткое имя для кнопки
                     button_text = f"🔗 Ссылка {i+1}"
+                    # Добавляем кнопку для каждой ссылки
                     msg_keyboard.row(InlineKeyboardButton(text=button_text, url=link))
+                    print(f"DEBUG - Added button with URL: {link}")
                 except Exception as e:
                     print(f"DEBUG - Error adding URL button: {str(e)}, URL: {link}")
+                    # Добавляем ссылку в текст сообщения вместо кнопки
                     message_text += f"\n{button_text}: {link}"
                     continue
 
-        # Поиск кодов подтверждения
+        # Улучшенный поиск кодов верификации
         verification_codes = []
         
-        # Ищем цифровые коды
+        # Сначала ищем цифровые коды напрямую в тексте
         numeric_codes = re.findall(r'(?<!\d)(\d{6})(?!\d)', msg_content)
         verification_codes.extend(numeric_codes)
         
-        # Ищем коды после ключевых слов
+        # Затем ищем коды после ключевых слов
         code_patterns = [
             r'(?:code|код|verify|token|auth|pin)[:\s]+(\d{6})',
             r'(?:enter|введите)[:\s]+(?:the\s+)?(?:code|pin|код)?[:\s]*(\d{6})',
             r'(?:verification|confirmation)[:\s]+(?:code|pin|код)?[:\s]*(\d{6})',
             r'(?:your|ваш)[:\s]+(?:code|pin|код)[:\s]+(?:is|:)[:\s]*(\d{6})',
-            r'(?<!\d)(\d{6})(?!\d)'
+            r'(?<!\d)(\d{6})(?!\d)',  # Изолированный 6-значный код
         ]
         
         for pattern in code_patterns:
@@ -1157,18 +1168,25 @@ def format_message(msg, format_type='full', idx=None, total=None):
                 code = code.strip()
                 if code and code.isdigit() and len(code) == 6:
                     verification_codes.append(code)
+                    print(f"DEBUG - Found numeric code: {code}")
         
-        # Добавляем найденные коды
+        # Удаляем дубликаты и сортируем
         verification_codes = sorted(set(verification_codes))
+        print(f"DEBUG - Final codes: {verification_codes}")
+        
         if verification_codes:
             message_text += "\n\n🔑 Коды подтверждения:"
             for code in verification_codes:
                 message_text += f"\n`{code}`"
 
+        # Добавляем кнопку удаления
+        msg_keyboard.row(InlineKeyboardButton("🗑 Удалить сообщение", callback_data=f"del_{idx}"))
+            
         return message_text, msg_keyboard
         
     except Exception as e:
         print(f"DEBUG - Error in format_message: {str(e)}")
+        # Возвращаем безопасное сообщение в случае ошибки
         error_text = f"""📨 {idx}/{total if total else '?'}
 От: {msg.get('from', 'Неизвестно')}
 Тема: {msg.get('subject', 'Без темы')}
