@@ -47,19 +47,24 @@ python bot.py
 git clone https://github.com/Drilspb4202/botmail.git
 ```
 
-4. Создайте и активируйте виртуальное окружение:
+4. Создайте виртуальное окружение:
 ```bash
 mkvirtualenv --python=/usr/bin/python3.9 botmail-env
+```
+
+5. Активируйте виртуальное окружение:
+```bash
 workon botmail-env
 ```
 
-5. Установите зависимости:
+6. Перейдите в директорию проекта и установите зависимости:
 ```bash
 cd botmail
+pip install pyTelegramBotAPI python-dotenv requests
 pip install -r requirements.txt
 ```
 
-6. Создайте и настройте файл с переменными окружения:
+7. Создайте и настройте файл с переменными окружения:
 ```bash
 nano .env
 ```
@@ -69,19 +74,42 @@ TELEGRAM_BOT_TOKEN=ваш_токен_бота
 ADMIN_ID=ваш_telegram_id
 ```
 
-7. Настройте Always-on task:
+8. Проверьте, что бот запускается:
+```bash
+python bot.py
+```
+
+9. Настройте Always-on task:
 - Перейдите в раздел "Tasks"
 - Нажмите "Add a new task"
-- В поле "Command" введите:
+- В поле "Command" введите полный путь:
 ```bash
-workon botmail-env && python /home/ваш_username/botmail/bot.py
+cd /home/ваш_username/botmail && source /home/ваш_username/.virtualenvs/botmail-env/bin/activate && python bot.py
 ```
 - Установите расписание на "Always-on"
 - Нажмите "Create"
 
-8. Проверьте логи в разделе "Files" в папке:
+10. Проверьте логи в разделе "Files" в папке:
 ```
 /home/ваш_username/.pythonanywhere/logs/
+```
+
+### Решение частых проблем на PythonAnywhere
+
+1. Если получаете ошибку "No module named 'telebot'":
+```bash
+workon botmail-env  # Активируйте виртуальное окружение
+pip install pyTelegramBotAPI  # Установите библиотеку вручную
+```
+
+2. Если виртуальное окружение не активируется:
+```bash
+source ~/.virtualenvs/botmail-env/bin/activate
+```
+
+3. Если не видно логов бота:
+```bash
+tail -f /home/ваш_username/.pythonanywhere/logs/botmail.log
 ```
 
 ## Обновление кода
