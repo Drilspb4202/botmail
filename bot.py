@@ -1149,38 +1149,48 @@ def format_message(msg, format_type='full', idx=None, total=None):
         # Паттерны для поиска кодов
         code_patterns = [
             # Поиск цифровых кодов
-            r'(?:digit code|код|code)[:\s]+(\d{4,8})',  # Цифровой код после ключевых слов
-            r'(?:^|\s)(\d{6})(?:\s|$)',  # 6-значный цифровой код
-            r'(?:^|\s)(\d{4,8})(?:\s|$)',  # Цифровой код от 4 до 8 цифр
+            r'(?:digit code|код|code|pin|пин-код|пин|код подтверждения)[:\s]+(\d{4,8})',  # Цифровой код после ключевых слов
+            r'(?:^|\s|:|-)(\d{6})(?:\s|$|\.|\?|!|,)',  # 6-значный цифровой код
+            r'(?:^|\s|:|-)(\d{4,8})(?:\s|$|\.|\?|!|,)',  # Цифровой код от 4 до 8 цифр
             
             # Поиск кода после ключевых слов с двоеточием
-            r'(?:Verification Code|Code|Код|Token|Verification|Authentication Code|Auth Code|Код подтверждения):?\s*([A-Za-z0-9]{4,12})',
+            r'(?:Verification Code|Code|Код|Token|Verification|Authentication Code|Auth Code|Код подтверждения|Confirmation Code|Security Code|Secure Code|Access Code|OTP|One-Time Password|One Time Code):?\s*([A-Za-z0-9]{4,12})',
             
             # Поиск кода в тексте с ключевыми словами
-            r'(?:code|код|verify|token|auth)[:\s]+([A-Za-z0-9]{4,12})',
+            r'(?:code|код|verify|token|auth|pin)[:\s]+([A-Za-z0-9]{4,12})',
             
             # Поиск кодов определенного формата
             r'Me[A-Za-z0-9]{6}',  # Формат Me + 6 символов
             r'[A-Z][a-z][A-Z][a-z][A-Z]\d[a-z]\d',  # Формат чередования букв и цифр
             r'[A-Za-z]\d[A-Za-z]\d[A-Za-z]\d[A-Za-z]\d',  # Формат буква-цифра
+            r'[A-Z]{2}\d{4}[A-Z]{2}',  # Формат AANNAA
             
             # Общий поиск кодов разной длины
-            r'(?:^|\s)([A-Za-z0-9]{4,12})(?:\s|$)',  # Коды от 4 до 12 символов
+            r'(?:^|\s|:|-|\()([A-Za-z0-9]{4,12})(?:\s|$|\.|\?|!|,|\))',  # Коды от 4 до 12 символов
             
             # Поиск кодов в скобках или кавычках
             r'[\(\[\{]([A-Za-z0-9]{4,12})[\)\]\}]',
             r'["\']([A-Za-z0-9]{4,12})["\']',
+            r'["\'](\d{4,8})["\']',  # Цифровые коды в кавычках
             
             # Поиск кодов с дефисами или точками
             r'[A-Za-z0-9]{2,4}[-_.][A-Za-z0-9]{2,4}',
+            r'\d{3}[-_.]\d{3}',  # Цифровые коды с разделителем
             
             # Специальные форматы
             r'(?:^|\s)([A-Z]{2}\d{2}[A-Z]{2}\d{2})',  # Формат AANN-AANN
             r'(?:^|\s)([A-Za-z]{2}\d{6})',  # Формат AA-NNNNNN
+            r'(?:^|\s)([A-Z]{2}\d{6}[A-Z]{2})',  # Формат AANNNNNNAA
             
             # Токены и длинные коды
             r'token=([A-Za-z0-9_-]{10,})',  # Токены после token=
             r'(?:^|\s)([A-Za-z0-9]{32})(?:\s|$)',  # 32-символьные коды
+            r'(?:^|\s)([A-Za-z0-9+/]{32,})(?:\s|$)',  # Base64 токены
+            
+            # Контекстный поиск
+            r'enter[:\s]+(?:the\s+)?(?:code|pin)?[:\s]*([A-Za-z0-9]{4,12})',
+            r'use[:\s]+(?:the\s+)?(?:code|pin)?[:\s]*([A-Za-z0-9]{4,12})',
+            r'your[:\s]+(?:code|pin)[:\s]+(?:is|:)[:\s]*([A-Za-z0-9]{4,12})',
         ]
         
         print(f"DEBUG - Original message content: {msg_content}")
@@ -1199,7 +1209,9 @@ def format_message(msg, format_type='full', idx=None, total=None):
         filtered_codes = []
         excluded_words = [
             'http', 'www', 'support', 'complete', 'generate', 'email', 
-            'mail', 'contact', 'please', 'thank', 'regards', 'best'
+            'mail', 'contact', 'please', 'thank', 'regards', 'best',
+            'click', 'link', 'visit', 'website', 'account', 'help',
+            'info', 'login', 'sign', 'page'
         ]
         
         for code in verification_codes:
@@ -1209,8 +1221,15 @@ def format_message(msg, format_type='full', idx=None, total=None):
                 not any(word in code.lower() for word in excluded_words) and  # Не должен содержать исключенные слова
                 # Должен содержать хотя бы одну цифру или заглавную букву, или быть полностью цифровым
                 (code.isdigit() or any(c.isupper() or c.isdigit() for c in code)) and
-                # Не должен быть простым словом
-                not code.isalpha()):
+                # Не должен быть простым словом или содержать только буквы
+                not code.isalpha() and
+                # Дополнительные проверки для улучшения точности
+                not re.match(r'^[a-z]+$', code) and  # Не только маленькие буквы
+                not re.match(r'^[A-Z]+$', code) and  # Не только большие буквы
+                # Проверка на типичные форматы кодов
+                (re.match(r'^\d+$', code) or  # Только цифры
+                 re.match(r'^[A-Za-z0-9]+$', code) or  # Буквы и цифры
+                 re.match(r'^[A-Za-z0-9_-]+$', code))):  # Буквы, цифры и спец. символы
                 filtered_codes.append(code)
                 print(f"DEBUG - Filtered code: {code}")
         
