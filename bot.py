@@ -1148,15 +1148,21 @@ def format_message(msg, format_type='full', idx=None, total=None):
         
         # Паттерны для поиска кодов
         code_patterns = [
-            # Поиск кода после слова "Verification Code:"
-            r'Verification Code:?\s*([a-zA-Z0-9]{8})',
-            # Поиск кода после слова "code"
-            r'code:?\s*([a-zA-Z0-9]{8})',
+            # Поиск кода после "Verification Code:"
+            r'Verification Code:?\s*([A-Za-z0-9]{8})',
+            # Поиск кода после "Code:"
+            r'Code:?\s*([A-Za-z0-9]{8})',
+            # Поиск кода в формате Me1ApCeu (начинается с Me)
+            r'Me[A-Za-z0-9]{6}',
             # Общий поиск 8-символьных кодов
-            r'(?:^|\s)([a-zA-Z0-9]{8})(?:\s|$)',
-            # Поиск кода в тексте
-            r'(?:^|\s)([a-zA-Z][A-Za-z0-9]{7})(?:\s|$)'
+            r'(?:^|\s)([A-Za-z0-9]{8})(?:\s|$)',
+            # Поиск кода в начале строки
+            r'^([A-Za-z0-9]{8})\s',
+            # Поиск кода после двоеточия
+            r':\s*([A-Za-z0-9]{8})'
         ]
+        
+        print(f"DEBUG - Original message content: {msg_content}")
         
         # Применяем каждый паттерн
         for pattern in code_patterns:
@@ -1165,7 +1171,7 @@ def format_message(msg, format_type='full', idx=None, total=None):
                 code = match.group(1) if len(match.groups()) > 0 else match.group(0)
                 code = code.strip()
                 if code:
-                    print(f"DEBUG - Found code: {code}")
+                    print(f"DEBUG - Found code with pattern {pattern}: {code}")
                     verification_codes.append(code)
         
         # Фильтруем найденные коды
@@ -1174,7 +1180,9 @@ def format_message(msg, format_type='full', idx=None, total=None):
             # Проверяем базовые условия
             if (len(code) == 8 and  # Длина кода должна быть 8 символов
                 not '@' in code and  # Не должен быть частью email
-                not any(word in code.lower() for word in ['http', 'www'])):  # Не должен быть частью URL
+                not any(word in code.lower() for word in ['http', 'www', 'support']) and  # Не должен быть частью URL или других слов
+                not code.lower().startswith('complete') and  # Исключаем слово complete
+                not code.lower().startswith('generate')):   # Исключаем слово generate
                 filtered_codes.append(code)
                 print(f"DEBUG - Filtered code: {code}")
         
