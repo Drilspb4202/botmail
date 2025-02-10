@@ -465,13 +465,11 @@ def create_new_mail(message):
                 if user_id not in user_emails:
                     user_emails[user_id] = {}
                 
-                # Сохраняем email данные
-                user_emails[user_id] = {
-                    email: {
+                # Добавляем новый email к существующим
+                user_emails[user_id][email] = {
                     'email': email,
                     'password': password,
                     'expired_at': expired_at
-                    }
                 }
                 
                 # Обновляем статистику
