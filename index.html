@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeuroMail - Временные Email ящики</title>
+    
+    <!-- Стили -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/button-fix.css">
+    <link rel="stylesheet" href="css/mobile-enhancements.css">
+    <link rel="stylesheet" href="css/language-switcher.css">
+    <link rel="stylesheet" href="css/compact-design.css">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="css/toastify.min.css">
+    <link rel="stylesheet" href="css/style.css?v=1743282000000">
+    
+    <!-- Chart.js для графиков -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Функция очистки кэша -->
+    <script>
+        // Очищаем кэш для гарантии обновления файлов
+        function clearBrowserCache() {
+            if (window.caches) {
+                caches.keys().then(function(names) {
+                    for (let name of names) {
+                        caches.delete(name);
+                    }
+                });
+            }
+            console.log('Кэш очищен. Текущий ящик в localStorage:', localStorage.getItem('current_inbox_id'));
+        }
+        clearBrowserCache();
+    </script>
+
+    <!-- Скрипт проверки API-ключей -->
+    <script src="js/api-keys-checker.js"></script>
+    
+    <!-- Яндекс.RTB -->
+    <script>window.yaContextCb=window.yaContextCb||[]</script>
+    <script src="https://yandex.ru/ads/system/context.js" async></script>
+</head>
+<body>
+    <!-- Анимированный фон -->
+    <div class="animated-background">
+        <div class="animated-bubble bubble-1"></div>
+        <div class="animated-bubble bubble-2"></div>
+        <div class="animated-bubble bubble-3"></div>
+        <div class="animated-bubble bubble-4"></div>
+        <div class="animated-bubble bubble-5"></div>
+        <div class="animated-bubble bubble-6"></div>
+    </div>
+
+    <div class="app-container">
+        <header class="app-header">
+            <div class="header-actions left-actions">
+                <button id="refresh-btn" class="btn btn-icon clickable-element" title="Обновить данные" data-i18n-title="refresh">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+            <div class="logo">
+                <img src="img/mail-logo.svg" alt="NeuroMail Logo" id="logo-placeholder">
+                <h1 data-i18n="app_name">NeuroMail</h1>
+            </div>
+            <div class="header-actions">
+                <button id="generate-data-btn" class="btn btn-primary clickable-element" title="Сгенерировать данные">
+                    <i class="fas fa-user-plus"></i> <span data-i18n="create">Генератор данных</span>
+                </button>
+                <div class="user-profile clickable-element">
+                    <i class="fas fa-user-circle"></i>
+                </div>
+            </div>
+        </header>
+
+        <!-- Левый рекламный блок -->
+        <div class="ad-container-left">
+            <!-- Яндекс.RTB R-A-14920627-2 -->
+            <div id="yandex_rtb_R-A-14920627-2"></div>
+            <script>
+            window.yaContextCb.push(() => {
+                Ya.Context.AdvManager.render({
+                    "blockId": "R-A-14920627-2",
+                    "renderTo": "yandex_rtb_R-A-14920627-2"
+                })
+            })
+            </script>
+        </div>
+        
+        <!-- Основное содержимое -->
+        <div class="main-content-wrapper">
+            <!-- Языковой переключатель -->
+            <div class="language-switcher">
+                <button id="lang-ru" class="lang-btn active clickable-element" data-lang="ru">RU</button>
+                <button id="lang-en" class="lang-btn clickable-element" data-lang="en">EN</button>
+            </div>
+
+            <nav class="app-nav">
+                <div class="nav-item active" data-target="inboxes-section">
+                    <i class="fas fa-inbox"></i>
+                    <span data-i18n="nav_inboxes">Почтовые ящики</span>
+                </div>
+                <div class="nav-item" data-target="emails-section">
+                    <div class="notification-badge" id="unread-count">0</div>
+                    <i class="fas fa-envelope"></i>
+                    <span data-i18n="nav_emails">Письма</span>
+                </div>
+                <div class="nav-item" data-target="settings-section">
+                    <i class="fas fa-cog"></i>
+                    <span data-i18n="nav_settings">Настройки</span>
+                </div>
+                <div class="nav-item" data-target="premium-section">
+                    <i class="fas fa-key"></i>
+                    <span data-i18n="nav_premium">Premium</span>
+                </div>
+                <div class="nav-item" data-target="donate-section">
+                    <i class="fas fa-heart"></i>
+                    <span data-i18n="nav_donate">Поддержать</span>
+                </div>
+            </nav>
+
+            <!-- Горизонтальный рекламный блок (для мобильных) -->
+            <div class="horizontal-ad" style="display: none;">
+                <span class="ad-title">РЕКЛАМА</span>
+                <p>Рекламный блок для мобильной версии</p>
+            </div>
+
+            <main class="app-content">
+                <!-- Секция почтовых ящиков -->
+                <section id="inboxes-section" class="content-section active">
+                    <div class="section-header">
+                        <h2 data-i18n="inbox_management">📬 Управление почтовыми ящиками</h2>
+                        <button id="create-inbox-btn" class="btn btn-primary clickable-element">
+                            <i class="fas fa-plus"></i> <span data-i18n="create_new_inbox">Создать новый</span>
+                        </button>
+                    </div>
+                    
+                    <!-- Таблица почтовых ящиков -->
+                    <div class="inbox-list-container">
+                        <table class="data-table" id="inboxes-table">
+                            <thead>
+                                <tr>
+                                    <th data-i18n="inbox_id">ID</th>
+                                    <th data-i18n="inbox_email">Email адрес</th>
+                                    <th data-i18n="inbox_created">Создан</th>
+                                    <th data-i18n="inbox_actions">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="inboxes-list">
+                                <!-- Данные будут добавлены через JavaScript -->
+                                <tr class="loading-placeholder">
+                                    <td colspan="4" data-i18n="inbox_loading">Загрузка почтовых ящиков...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- VPN Warning -->
+                    <div class="warning-section" style="margin: 15px 0; padding: 15px; background-color: rgba(255, 50, 50, 0.2); border: 2px solid #ff5555; border-radius: 8px; display: flex; align-items: center;">
+                        <div style="font-size: 24px; color: #ff5555; margin-right: 15px;">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div>
+                            <h4 style="color: #ff5555; margin: 0 0 10px 0; font-weight: bold;">Внимание! Важная информация</h4>
+                            <p style="margin: 0; color: #fff;"><span data-i18n="vpn_warning">Если вы находитесь в России, для корректной работы сервиса необходимо использовать VPN. В настоящее время сервис может работать нестабильно на мобильных устройствах.</span></p>
+                        </div>
+                    </div>
+                    
+                    <!-- Скрипт для обеспечения видимости предупреждения -->
+                    <script>
+                        (function() {
+                            const warning = document.querySelector('.warning-section');
+                            if (warning) {
+                                warning.style.display = 'flex';
+                                warning.style.opacity = '1';
+                                warning.style.visibility = 'visible';
+                                
+                                // Анимация для привлечения внимания
+                                let isIncreasing = false;
+                                warning.style.transition = 'box-shadow 0.5s';
+                                
+                                setInterval(() => {
+                                    if (isIncreasing) {
+                                        warning.style.boxShadow = '0 0 15px rgba(255, 80, 80, 0.7)';
+                                    } else {
+                                        warning.style.boxShadow = '0 0 5px rgba(255, 80, 80, 0.3)';
+                                    }
+                                    isIncreasing = !isIncreasing;
+                                }, 1000);
+                            }
+                        })();
+                    </script>
+                    
+                    <!-- Основная информация -->
+                    <div class="info-panel">
+                        <div class="info-panel-icon">
+                            <i class="fas fa-magic"></i>
+                        </div>
+                        <div class="info-panel-content">
+                            <h4 data-i18n="welcome_title">👋 Добро пожаловать в NeuroMail!</h4>
+                            <p data-i18n="welcome_desc">NeuroMail — это мощный инструмент для работы с временными почтовыми ящиками. Создавайте виртуальные ящики для защиты вашей основной почты от спама и нежелательных рассылок.</p>
+                            <div class="feature-list">
+                                <div class="feature-item">
+                                    <i class="fas fa-shield-alt"></i>
+                                    <span data-i18n="feature_privacy">Защита конфиденциальности при регистрации на сайтах</span>
+                                </div>
+                                <div class="feature-item">
+                                    <i class="fas fa-bolt"></i>
+                                    <span data-i18n="feature_instant">Мгновенное создание и удаление почтовых ящиков</span>
+                                </div>
+                                <div class="feature-item">
+                                    <i class="fas fa-envelope-open-text"></i>
+                                    <span data-i18n="feature_realtime">Просмотр писем в реальном времени с уведомлениями</span>
+                                </div>
+                            </div>
+                            <p><strong data-i18n="tip">Совет:</strong> <span data-i18n="tip_copy">Нажмите на адрес электронной почты в таблице, чтобы скопировать его в буфер обмена.</span></p>
+                            <p class="public-key-note"><i class="fas fa-clock"></i> <strong data-i18n="note">Обратите внимание:</strong> <span data-i18n="public_api_note">При использовании публичного API ключа почтовые ящики автоматически удаляются через 5 минут.</span></p>
+                        </div>
+                    </div>
+                    
+                    <!-- Яндекс.RTB R-A-14920627-1 -->
+                    <div id="yandex_rtb_R-A-14920627-1"></div>
+                    <script>
+                    window.yaContextCb.push(() => {
+                        Ya.Context.AdvManager.render({
+                            "blockId": "R-A-14920627-1",
+                            "renderTo": "yandex_rtb_R-A-14920627-1"
+                        })
+                    })
+                    </script>
+                    
+                    <!-- Яндекс.RTB R-A-14920627-4 -->
+                    <div id="yandex_rtb_R-A-14920627-4"></div>
+                    <script>
+                    window.yaContextCb.push(() => {
+                        Ya.Context.AdvManager.render({
+                            "blockId": "R-A-14920627-2",
+                            "renderTo": "yandex_rtb_R-A-14920627-4"
+                        })
+                    })
+                    </script>
+                </section>
+
+                <!-- Секция писем -->
+                <section id="emails-section" class="content-section">
+                    <div class="section-header">
+                        <h2 id="current-inbox-title" data-i18n="emails_title">📧 Письма</h2>
+                        <button id="send-email-btn" class="btn btn-primary clickable-element">
+                            <i class="fas fa-paper-plane"></i> <span data-i18n="emails_send">Отправить письмо</span>
+                        </button>
+                    </div>
+                    
+                    <div class="email-list-container">
+                        <table class="data-table" id="emails-table">
+                            <thead>
+                                <tr>
+                                    <th data-i18n="emails_from">От кого</th>
+                                    <th data-i18n="emails_subject">Тема</th>
+                                    <th data-i18n="emails_received">Получено</th>
+                                    <th data-i18n="inbox_actions">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="emails-list">
+                                <!-- Данные будут добавлены через JavaScript -->
+                                <tr class="no-inbox-selected">
+                                    <td colspan="4" data-i18n="emails_no_inbox">Выберите почтовый ящик для просмотра писем</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="email-viewer" id="email-viewer">
+                        <div class="email-viewer-header">
+                            <h3>📨 Просмотр письма</h3>
+                            <button class="btn btn-icon" id="close-email-btn">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="email-details">
+                            <div class="email-detail-row">
+                                <span class="email-label">От:</span>
+                                <span id="email-from"></span>
+                            </div>
+                            <div class="email-detail-row">
+                                <span class="email-label">Кому:</span>
+                                <span id="email-to"></span>
+                            </div>
+                            <div class="email-detail-row">
+                                <span class="email-label">Тема:</span>
+                                <span id="email-subject"></span>
+                            </div>
+                            <div class="email-detail-row">
+                                <span class="email-label">Дата:</span>
+                                <span id="email-date"></span>
+                            </div>
+                        </div>
+                        <div class="email-body" id="email-body">
+                            <!-- Содержимое письма будет добавлено через JavaScript -->
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Секция настроек -->
+                <section id="settings-section" class="content-section">
+                    <div class="section-header">
+                        <h2 data-i18n="settings_title"><i class="fas fa-cog"></i> Настройки</h2>
+                    </div>
+                    
+                    <div class="settings-form">
+                        <div class="settings-group">
+                            <h3 data-i18n="settings_api"><i class="fas fa-key"></i> API ключ</h3>
+                            
+                            <!-- Настройки API -->
+                            <div class="form-group">
+                                <div class="api-mode-label" data-i18n="settings_api_mode_label"><i class="fas fa-exchange-alt"></i> Режим API</div>
+                                <div class="api-mode-options">
+                                    <span class="api-mode-option" id="public-api-option" data-i18n="settings_api_mode_public"><i class="fas fa-globe"></i> Публичный</span>
+                                    
+                                    <span class="api-mode-separator">|</span>
+                                    
+                                    <span class="api-mode-option" id="personal-api-option" data-i18n="settings_api_mode_personal"><i class="fas fa-user-lock"></i> Персональный</span>
+                                    
+                                    <span class="api-mode-separator">|</span>
+                                    
+                                    <span class="api-mode-option" id="combined-api-option" data-i18n="settings_api_mode_combined"><i class="fas fa-sync-alt"></i> Комбинированный</span>
+                                </div>
+                            </div>
+                            
+                            <div class="settings-field api-key-field">
+                                <label for="api-key" data-i18n="settings_api_key_personal"><i class="fas fa-fingerprint"></i> Персональный API ключ:</label>
+                                <div class="api-key-input-group">
+                                    <input type="password" id="api-key" class="text-input" data-i18n-placeholder="settings_api_key_placeholder" placeholder="Введите персональный API ключ...">
+                                    <button class="btn btn-toggle-pwd" id="toggle-api-key-visibility" data-i18n-title="settings_api_key_toggle" title="Показать/скрыть ключ">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                </div>
+                                <div class="api-key-desc">
+                                    <span id="public-key-note" data-i18n="settings_api_public_note">
+                                        <i class="fas fa-shield-alt"></i> Используется защищенный публичный API ключ
+                                    </span>
+                                    <span id="personal-key-note" style="display: none;" data-i18n="settings_api_personal_note">
+                                        <i class="fas fa-lock"></i> Используется персональный API ключ
+                                    </span>
+                                </div>
+                            </div>
+                            
+                            <div class="settings-field">
+                                <button class="btn btn-primary" id="update-api-key-btn" data-i18n="settings_api_update"><i class="fas fa-save"></i> Сохранить ключ</button>
+                                <button class="btn" id="reset-to-public-api-btn" data-i18n="settings_api_reset"><i class="fas fa-undo"></i> Сбросить к публичному API</button>
+                            </div>
+                        </div>
+
+                        <div class="settings-group">
+                            <h3 data-i18n="settings_timeouts"><i class="fas fa-clock"></i> Тайм-ауты</h3>
+                            <div class="settings-field">
+                                <label for="email-wait-timeout" data-i18n="settings_timeout_email"><i class="fas fa-envelope"></i> Ожидание письма (сек):</label>
+                                <input type="number" id="email-wait-timeout" class="number-input" value="30" min="1">
+                            </div>
+                            <div class="settings-field">
+                                <label for="http-timeout" data-i18n="settings_timeout_http"><i class="fas fa-globe"></i> Тайм-аут HTTP запроса (сек):</label>
+                                <input type="number" id="http-timeout" class="number-input" value="10" min="1">
+                            </div>
+                            <button class="btn btn-primary" id="save-timeouts-btn" data-i18n="save"><i class="fas fa-save"></i> Сохранить</button>
+                        </div>
+
+                        <div class="settings-group">
+                            <h3 data-i18n="settings_auto_delete"><i class="fas fa-trash-alt"></i> Автоматическое удаление</h3>
+                            <div class="settings-field checkbox-field">
+                                <input type="checkbox" id="auto-delete-inboxes" checked>
+                                <label for="auto-delete-inboxes" data-i18n="settings_auto_delete_inboxes">Автоматически удалять почтовые ящики после использования</label>
+                            </div>
+                            <div class="settings-field checkbox-field">
+                                <input type="checkbox" id="auto-delete-emails" checked>
+                                <label for="auto-delete-emails" data-i18n="settings_auto_delete_emails">Удалять письма старше:</label>
+                                <input type="number" id="auto-delete-days" class="number-input" value="7" min="1">
+                                <span data-i18n="settings_auto_delete_days">дней</span>
+                            </div>
+                            <div class="settings-field">
+                                <label data-i18n="settings_inbox_timer"><i class="fas fa-hourglass-half"></i> Таймер удаления ящика после просмотра:</label>
+                                <div class="radio-controls">
+                                    <label class="radio-control">
+                                        <input type="radio" name="inbox-delete-timer" value="0">
+                                        <span data-i18n="settings_inbox_timer_never">Не удалять</span>
+                                    </label>
+                                    <label class="radio-control">
+                                        <input type="radio" name="inbox-delete-timer" value="5" checked>
+                                        <span data-i18n="settings_inbox_timer_5min">Через 5 минут</span>
+                                    </label>
+                                    <label class="radio-control">
+                                        <input type="radio" name="inbox-delete-timer" value="60">
+                                        <span data-i18n="settings_inbox_timer_1hour">Через 1 час</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <button class="btn btn-primary" id="save-auto-delete-btn" data-i18n="save"><i class="fas fa-save"></i> Сохранить</button>
+                        </div>
+
+                        <div class="settings-group">
+                            <h3 data-i18n="settings_logging"><i class="fas fa-file-alt"></i> Журнал операций</h3>
+                            <div class="settings-field checkbox-field">
+                                <input type="checkbox" id="enable-logging" checked>
+                                <label for="enable-logging" data-i18n="settings_logging_enable">Включить журналирование</label>
+                            </div>
+                            <div class="settings-field checkbox-field">
+                                <input type="checkbox" id="save-log-to-file" checked>
+                                <label for="save-log-to-file" data-i18n="settings_logging_save_file">Сохранять журнал в файл</label>
+                            </div>
+                            <div class="settings-field">
+                                <label for="log-file-path" data-i18n="settings_logging_path"><i class="fas fa-folder"></i> Путь к файлу журнала:</label>
+                                <input type="text" id="log-file-path" class="text-input" value="./mailslurp.log">
+                            </div>
+                            <button class="btn btn-primary" id="save-logging-btn" data-i18n="save"><i class="fas fa-save"></i> Сохранить</button>
+                        </div>
+                        
+                        <!-- Новая секция для секретного кода -->
+                        <div class="settings-group secret-code-section">
+                            <h3 data-i18n="settings_secret_code"><i class="fas fa-unlock-alt"></i> Расширенные возможности</h3>
+                            <div class="settings-field">
+                                <label for="secret-code" data-i18n="code_label"><i class="fas fa-key"></i> Секретный код:</label>
+                                <div class="secret-code-input-group">
+                                    <input type="password" id="secret-code" class="text-input" data-i18n-placeholder="settings_secret_code_placeholder" placeholder="Введите секретный код для разблокировки...">
+                                    <button class="btn btn-toggle-code" id="toggle-code-visibility" data-i18n-title="settings_secret_code_toggle" title="Показать/скрыть код">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                </div>
+                                <div class="secret-code-status" id="secret-code-status">
+                                    <span class="code-inactive" data-i18n="code_status_inactive"><i class="fas fa-times-circle"></i> Код не активирован</span>
+                                    <span class="code-active" style="display: none;" data-i18n="code_status_active"><i class="fas fa-check-circle"></i> Премиум-функции активированы</span>
+                                </div>
+                                <p class="secret-code-desc" data-i18n="settings_secret_code_desc">Введите специальный код для разблокировки расширенных функций, включая сохранение почтовых ящиков при использовании публичного API.</p>
+                            </div>
+                            <button class="btn btn-primary" id="activate-code-btn" data-i18n="code_activate"><i class="fas fa-unlock"></i> Активировать код</button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Premium API Key Section -->
+                <section id="premium-section" class="content-section">
+                    <div class="section-header">
+                        <h2 class="section-title" data-i18n="premium_title">🔑 Premium API-ключ</h2>
+                    </div>
+                    
+                    <div class="premium-container">
+                        <div class="premium-card">
+                            <div class="premium-header">
+                                <h3 data-i18n="premium_subtitle">Получите персональный доступ к сервису</h3>
+                                <div class="premium-price">
+                                    <span class="price-amount">5 USDT</span>
+                                    <span class="price-period" data-i18n="premium_price_period">/ месяц</span>
+                                </div>
+                            </div>
+                            
+                            <div class="premium-body">
+                                <div class="premium-features">
+                                    <div class="feature">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span data-i18n="premium_feature_1">10 персональных почтовых ящиков</span>
+                                    </div>
+                                    <div class="feature">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span data-i18n="premium_feature_2">Полная конфиденциальность ваших данных</span>
+                                    </div>
+                                    <div class="feature">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span data-i18n="premium_feature_3">Мгновенное получение писем и уведомления</span>
+                                    </div>
+                                    <div class="feature">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span data-i18n="premium_feature_4">Возможность удалять и создавать новые ящики</span>
+                                    </div>
+                                    <div class="feature">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span data-i18n="premium_feature_5">Прием почты со всех популярных сервисов</span>
+                                    </div>
+                                    <div class="feature">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span data-i18n="premium_feature_6">Идеально для кодов регистрации и проверочных ссылок</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="premium-warning">
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                    <p data-i18n="premium_warning">Без Premium-ключа все пользователи делят общий доступ к API, что ограничивает приватность и может привести к потере доступа к вашим ящикам.</p>
+                                </div>
+                                
+                                <div class="premium-contact">
+                                    <h4 data-i18n="premium_contact_title">Как получить персональный API-ключ:</h4>
+                                    <p data-i18n="premium_contact_message">Просто свяжитесь с нами в Telegram:</p>
+                                    <a href="https://t.me/AromaFlow_DoTERRA" class="telegram-button" target="_blank">
+                                        <i class="fab fa-telegram"></i>
+                                        @AromaFlow_DoTERRA
+                                    </a>
+                                    <p class="contact-info" data-i18n="premium_payment_info">Оплата принимается в USDT. После оплаты вы получите ваш персональный API-ключ, который нужно будет ввести в разделе "Настройки".</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="testimonials">
+                            <h3 data-i18n="premium_testimonials_title">Что говорят наши пользователи</h3>
+                            <div class="testimonial">
+                                <div class="testimonial-text">
+                                    "Использую для регистрации на сайтах и получения уведомлений. Персональный ключ дает полную уверенность в безопасности данных."
+                                </div>
+                                <div class="testimonial-author">Алексей К.</div>
+                            </div>
+                            <div class="testimonial">
+                                <div class="testimonial-text">
+                                    "Очень удобно для работы с несколькими проектами одновременно. 10 ящиков более чем достаточно."
+                                </div>
+                                <div class="testimonial-author">Мария С.</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Секция поддержки проекта -->
+                <section id="donate-section" class="content-section">
+                    <div class="section-header">
+                        <h2 data-i18n="donate_title">❤️ Поддержать развитие проекта</h2>
+                        <button id="donate-btn" class="btn btn-primary">
+                            <i class="fas fa-donate"></i> <span data-i18n="donate_button">Сделать пожертвование</span>
+                        </button>
+                    </div>
+                    
+                    <div class="info-panel">
+                        <div class="info-panel-icon">
+                            <i class="fas fa-heart"></i>
+                        </div>
+                        <div class="info-panel-content">
+                            <h4 data-i18n="donate_support_title">💖 Ваша поддержка важна для нас!</h4>
+                            <p data-i18n="donate_support_desc">Проект NeuroMail создается и поддерживается энтузиастами. Ваши пожертвования помогают нам:</p>
+                            <div class="feature-list">
+                                <div class="feature-item">
+                                    <i class="fas fa-server"></i>
+                                    <span data-i18n="donate_feature_1">Оплачивать серверную инфраструктуру</span>
+                                </div>
+                                <div class="feature-item">
+                                    <i class="fas fa-code"></i>
+                                    <span data-i18n="donate_feature_2">Разрабатывать новые функции</span>
+                                </div>
+                                <div class="feature-item">
+                                    <i class="fas fa-lock"></i>
+                                    <span data-i18n="donate_feature_3">Улучшать безопасность и производительность</span>
+                                </div>
+                                <div class="feature-item">
+                                    <i class="fas fa-coffee"></i>
+                                    <span data-i18n="donate_feature_4">Поддерживать команду разработчиков</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="donate-options">
+                        <div class="donate-card">
+                            <div class="donate-card-header">
+                                <i class="fab fa-btc"></i>
+                                <h3 data-i18n="donate_crypto">Криптовалюта</h3>
+                            </div>
+                            <div class="donate-card-body">
+                                <p data-i18n="donate_crypto_desc">Поддержите развитие проекта с помощью криптовалюты.</p>
+                                <button id="show-usdt-wallet" class="btn btn-primary">
+                                    <i class="fas fa-wallet"></i> <span data-i18n="donate_show_wallet">Показать кошелек USDT TRC20</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+
+        <!-- Правый рекламный блок -->
+        <div class="ad-container-right">
+            <!-- Яндекс.RTB R-A-14920627-3 -->
+            <div id="yandex_rtb_R-A-14920627-3"></div>
+            <script>
+            window.yaContextCb.push(() => {
+                Ya.Context.AdvManager.render({
+                    "blockId": "R-A-14920627-3",
+                    "renderTo": "yandex_rtb_R-A-14920627-3"
+                })
+            })
+            </script>
+        </div>
+    </div>
+
+    <!-- Модальные окна -->
+    <div class="modal" id="create-inbox-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 data-i18n="modal_create_inbox">Создание нового почтового ящика</h3>
+                <button class="btn btn-icon modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p data-i18n="modal_create_inbox_desc">Нажмите кнопку "Создать" для создания нового временного почтового ящика. Адрес ящика будет сгенерирован автоматически.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn modal-close clickable-element" data-i18n="cancel">Отмена</button>
+                <button class="btn btn-primary clickable-element" id="confirm-create-inbox" data-i18n="create">Создать</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="send-email-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Отправка нового письма</h3>
+                <button class="btn btn-icon modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-field">
+                    <label for="email-from-select">От:</label>
+                    <select id="email-from-select" class="text-input">
+                        <!-- Список почтовых ящиков будет добавлен через JavaScript -->
+                    </select>
+                </div>
+                <div class="form-field">
+                    <label for="email-to">Кому:</label>
+                    <input type="email" id="email-to" class="text-input" placeholder="recipient@example.com">
+                </div>
+                <div class="form-field">
+                    <label for="email-subject-input">Тема:</label>
+                    <input type="text" id="email-subject-input" class="text-input" placeholder="Тема письма">
+                </div>
+                <div class="form-field">
+                    <div class="editor-controls">
+                        <label for="email-body-input">Текст письма:</label>
+                        <div class="editor-mode">
+                            <label class="radio-control">
+                                <input type="radio" name="editor-mode" value="plain" checked> Обычный текст
+                            </label>
+                            <label class="radio-control">
+                                <input type="radio" name="editor-mode" value="markdown"> Markdown
+                            </label>
+                            <label class="radio-control">
+                                <input type="radio" name="editor-mode" value="html"> HTML
+                            </label>
+                            <button type="button" id="preview-markdown-btn" class="btn btn-small">Предпросмотр</button>
+                        </div>
+                    </div>
+                    <textarea id="email-body-input" class="text-input" rows="6" placeholder="Текст письма..."></textarea>
+                    <div id="markdown-preview" class="markdown-preview">
+                        <div class="markdown-preview-header">
+                            <span>Предпросмотр Markdown</span>
+                            <button class="btn btn-icon close-preview-btn">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="markdown-preview-content markdown-content">
+                            <!-- Предпросмотр будет добавлен через JavaScript -->
+                        </div>
+                    </div>
+                    <div class="markdown-help">
+                        <button type="button" id="toggle-markdown-help" class="btn btn-small">Форматирование</button>
+                        <div id="markdown-help-content" class="markdown-help-content hidden">
+                            <h4>Справочник по форматированию</h4>
+                            <div class="format-tabs">
+                                <button class="format-tab active" data-tab="markdown">Markdown</button>
+                                <button class="format-tab" data-tab="html">HTML</button>
+                            </div>
+                            <div class="format-content markdown-tab active">
+                                <table class="markdown-help-table">
+                                    <tr>
+                                        <td><code># Заголовок</code></td>
+                                        <td>Заголовок 1 уровня</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>## Заголовок</code></td>
+                                        <td>Заголовок 2 уровня</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>**жирный**</code></td>
+                                        <td>Жирный текст</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>*курсив*</code></td>
+                                        <td>Курсивный текст</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>[ссылка](http://example.com)</code></td>
+                                        <td>Ссылка</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>- элемент списка</code></td>
+                                        <td>Маркированный список</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>1. элемент списка</code></td>
+                                        <td>Нумерованный список</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>![alt текст](url картинки)</code></td>
+                                        <td>Изображение</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>```код```</code></td>
+                                        <td>Блок кода</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>```javascript<br>// Код с подсветкой<br>```</code></td>
+                                        <td>Код с подсветкой синтаксиса</td>
+                                    </tr>
+                                </table>
+                            </div>
+                            <div class="format-content html-tab">
+                                <table class="markdown-help-table">
+                                    <tr>
+                                        <td><code>&lt;h1&gt;Заголовок&lt;/h1&gt;</code></td>
+                                        <td>Заголовок 1 уровня</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>&lt;strong&gt;жирный&lt;/strong&gt;</code></td>
+                                        <td>Жирный текст</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>&lt;em&gt;курсив&lt;/em&gt;</code></td>
+                                        <td>Курсивный текст</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>&lt;a href="url"&gt;ссылка&lt;/a&gt;</code></td>
+                                        <td>Ссылка</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>&lt;ul&gt;<br>&nbsp;&lt;li&gt;элемент&lt;/li&gt;<br>&lt;/ul&gt;</code></td>
+                                        <td>Маркированный список</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>&lt;img src="url" alt="текст"&gt;</code></td>
+                                        <td>Изображение</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>&lt;button&gt;Кнопка&lt;/button&gt;</code></td>
+                                        <td>Кнопка</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>&lt;div style="color: blue;"&gt;Текст&lt;/div&gt;</code></td>
+                                        <td>Синий текст</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>&lt;table&gt;...&lt;/table&gt;</code></td>
+                                        <td>Таблица</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>&lt;pre&gt;&lt;code&gt;код&lt;/code&gt;&lt;/pre&gt;</code></td>
+                                        <td>Блок кода</td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn modal-close clickable-element" data-i18n="cancel">Отмена</button>
+                <button class="btn btn-primary clickable-element" id="confirm-send-email" data-i18n="send">Отправить</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="delete-confirm-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Подтверждение удаления</h3>
+                <button class="btn btn-icon modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="delete-confirm-text">Вы уверены, что хотите удалить этот элемент?</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn modal-close clickable-element" data-i18n="cancel">Отмена</button>
+                <button class="btn btn-danger clickable-element" id="confirm-delete" style="background-color: #dc3545 !important; color: white !important; border-color: #dc3545 !important;" data-i18n="delete">Удалить</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно генерации данных -->
+    <div class="modal generator-modal" id="generator-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 data-i18n="generator_title">Генерация данных</h3>
+                <button class="btn btn-icon modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="generator-avatar">
+                    <i class="fas fa-user"></i>
+                </div>
+                
+                <div class="generator-field">
+                    <label data-i18n="generator_first_name">Имя</label>
+                    <input type="text" id="generator-first-name" class="copyable" readonly>
+                </div>
+                
+                <div class="generator-field">
+                    <label data-i18n="generator_last_name">Фамилия</label>
+                    <input type="text" id="generator-last-name" class="copyable" readonly>
+                </div>
+                
+                <div class="generator-field">
+                    <label data-i18n="generator_login">Логин</label>
+                    <input type="text" id="generator-login" class="copyable" readonly>
+                </div>
+                
+                <div class="generator-field">
+                    <label data-i18n="generator_password">Пароль</label>
+                    <input type="text" id="generator-password" class="copyable" readonly>
+                </div>
+                
+                <div class="generator-info">
+                    <i class="fas fa-clock"></i>
+                    <span><span data-i18n="generator_validity">Действительно</span>: <span id="generator-expiry">5:00</span> <span data-i18n="generator_minutes">минут</span></span>
+                </div>
+                
+                <div class="generator-info">
+                    <i class="fas fa-info-circle"></i>
+                    <span data-i18n="generator_one_time">Данные действительны для одной регистрации</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="generator-btn" id="copy-all-data-btn">
+                    <i class="fas fa-copy"></i> <span data-i18n="generator_copy_all">Копировать все данные</span>
+                </button>
+                <button class="generator-btn generator-btn-outline" id="generate-new-data-btn">
+                    <i class="fas fa-sync-alt"></i> <span data-i18n="generator_generate_new">Сгенерировать новое</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно для кошелька USDT -->
+    <div class="modal" id="wallet-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 data-i18n="wallet_modal_title">Кошелек USDT TRC20</h3>
+                <button class="btn btn-icon modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="wallet-info">
+                    <p data-i18n="wallet_modal_desc">Вы можете поддержать проект, отправив USDT на следующий кошелек:</p>
+                    
+                    <div class="wallet-address">
+                        <code id="wallet-address-text">TJVdiopy7jwNMzPWr5mRDnx6hjmRs1eCkT</code>
+                        <button class="btn btn-icon copy-wallet-btn" title="Копировать адрес">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                    
+                    <div class="wallet-note">
+                        <p><i class="fas fa-info-circle"></i> <span data-i18n="wallet_modal_note">Используйте только сеть TRC20 для отправки USDT.</span></p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn modal-close" data-i18n="close">Закрыть</button>
+                <button class="btn btn-primary" id="copy-wallet-address" data-i18n="wallet_copy_btn">Копировать адрес</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Тост-уведомления -->
+    <div class="toast" id="toast">
+        <div class="toast-message"></div>
+        <div class="toast-close">
+            <i class="fas fa-times"></i>
+        </div>
+    </div>
+
+    <!-- Обработчик ошибок для отображения их на странице -->
+    <div id="error-container" style="position: fixed; bottom: 10px; left: 10px; background: rgba(255,0,0,0.8); color: white; padding: 10px; border-radius: 5px; max-width: 80%; max-height: 200px; overflow: auto; z-index: 9999; display: none;"></div>
+    
+    <script>
+        // Глобальный перехватчик ошибок
+        window.onerror = function(message, source, lineno, colno, error) {
+            const errorContainer = document.getElementById('error-container');
+            if (errorContainer) {
+                errorContainer.style.display = 'block';
+                errorContainer.innerHTML += `<p><strong>Ошибка:</strong> ${message}<br><em>${source}:${lineno}:${colno}</em></p>`;
+                console.error('Перехваченная ошибка:', message, source, lineno, colno, error);
+            }
+            return false;
+        };
+    </script>
+
+    <!-- JS Скрипты -->
+    <script src="js/apiKeyManager.js?v=1743281999999"></script>
+    <script src="js/api-key-pool.js?v=1743282000000"></script>
+    <script src="js/api-key-updater.js?v=1743282000001"></script>
+    <script src="js/api.js?v=1743281999999"></script>
+    <script src="js/ui.js?v=1743281999999"></script>
+    <script src="js/generator.js?v=1743281999999"></script>
+    <script src="js/i18n.js?v=1743281999999"></script>
+    <script>
+        // Проверка инициализации языкового модуля
+        document.addEventListener('DOMContentLoaded', function() {
+            try {
+                if (window.i18n) {
+                    console.log('✅ Модуль i18n успешно загружен');
+                    
+                    // Устанавливаем правильные классы для кнопок языка
+                    const currentLang = window.i18n.currentLang || 'ru';
+                    document.querySelectorAll('.lang-btn').forEach(btn => {
+                        if (btn.getAttribute('data-lang') === currentLang) {
+                            btn.classList.add('active');
+                        } else {
+                            btn.classList.remove('active');
+                        }
+                    });
+                    
+                    // Добавляем прямые обработчики событий для кнопок переключения языка
+                    const ruBtn = document.getElementById('lang-ru');
+                    const enBtn = document.getElementById('lang-en');
+                    
+                    if (ruBtn) {
+                        ruBtn.addEventListener('click', function(e) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (window.i18n) {
+                                console.log('Переключаем на русский язык');
+                                window.i18n.setLanguage('ru');
+                            }
+                        });
+                    }
+                    
+                    if (enBtn) {
+                        enBtn.addEventListener('click', function(e) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (window.i18n) {
+                                console.log('Переключаем на английский язык');
+                                window.i18n.setLanguage('en');
+                            }
+                        });
+                    }
+                    
+                    // Проверяем, существует ли элемент toast-message
+                    const toast = document.getElementById('toast');
+                    if (toast) {
+                        if (!toast.querySelector('.toast-message')) {
+                            console.log('Создаем элемент toast-message');
+                            const messageEl = document.createElement('div');
+                            messageEl.className = 'toast-message';
+                            messageEl.textContent = 'Уведомление';
+                            toast.appendChild(messageEl);
+                        }
+                    } else {
+                        console.warn('Элемент #toast не найден на странице');
+                    }
+                } else {
+                    console.error('❌ Модуль i18n не загружен');
+                    
+                    // Попытка динамической загрузки
+                    const script = document.createElement('script');
+                    script.src = 'js/i18n.js?v=' + Date.now();
+                    script.onload = function() {
+                        console.log('Модуль i18n загружен динамически');
+                        if (window.i18n) {
+                            window.i18n.initEvents();
+                        }
+                    };
+                    document.head.appendChild(script);
+                }
+            } catch (error) {
+                console.error('Ошибка при инициализации языкового переключателя:', error);
+            }
+        });
+    </script>
+    <script src="js/app.js?v=1743281999999"></script>
+    <!-- Оптимизация производительности и скроллинга -->
+    <script src="js/performance-optimizer.js?v=1743282000000"></script>
+
+    <!-- Скрипт для обработки рекламных блоков -->
+    <script>
+        // При загрузке страницы
+        document.addEventListener('DOMContentLoaded', () => {
+            // Показываем горизонтальную рекламу на мобильных устройствах
+            function updateAdVisibility() {
+                const horizontalAd = document.querySelector('.horizontal-ad');
+                if (window.innerWidth < 992) {
+                    horizontalAd.style.display = 'block';
+                } else {
+                    horizontalAd.style.display = 'none';
+                }
+            }
+            
+            // Обновляем при загрузке и изменении размера
+            updateAdVisibility();
+            window.addEventListener('resize', updateAdVisibility);
+        });
+    </script>
+
+    <!-- Мобильная навигация -->
+    <div class="mobile-fixed-nav">
+        <div class="mobile-nav-item active" data-target="inboxes-section">
+            <i class="fas fa-inbox"></i>
+            <span data-i18n="mobile_inbox">Ящики</span>
+        </div>
+        <div class="mobile-nav-item" data-target="emails-section">
+            <div class="notification-badge" id="mobile-unread-count">0</div>
+            <i class="fas fa-envelope"></i>
+            <span data-i18n="mobile_emails">Письма</span>
+        </div>
+        <div class="mobile-nav-item" data-target="settings-section">
+            <i class="fas fa-cog"></i>
+            <span data-i18n="mobile_settings">Настройки</span>
+        </div>
+        <div class="mobile-nav-item" data-target="premium-section">
+            <i class="fas fa-key"></i>
+            <span data-i18n="mobile_premium">Premium</span>
+        </div>
+    </div>
+
+    <!-- Определение мобильного устройства -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Определяем, является ли устройство мобильным
+            const isMobile = window.innerWidth <= 768;
+            
+            // Показываем или скрываем мобильную навигацию
+            const mobileNav = document.querySelector('.mobile-fixed-nav');
+            mobileNav.style.display = isMobile ? 'flex' : 'none';
+            
+            // При изменении размера окна
+            window.addEventListener('resize', () => {
+                const isMobile = window.innerWidth <= 768;
+                mobileNav.style.display = isMobile ? 'flex' : 'none';
+            });
+            
+            // Добавляем обработчики событий для мобильной навигации
+            const mobileNavItems = document.querySelectorAll('.mobile-nav-item');
+            mobileNavItems.forEach(item => {
+                item.addEventListener('click', () => {
+                    // Убираем active класс у всех элементов
+                    mobileNavItems.forEach(navItem => navItem.classList.remove('active'));
+                    // Добавляем active класс к текущему элементу
+                    item.classList.add('active');
+                    
+                    // Получаем целевую секцию
+                    const targetId = item.getAttribute('data-target');
+                    
+                    // Активируем вкладку в основной навигации
+                    const navItem = document.querySelector(`.nav-item[data-target="${targetId}"]`);
+                    if (navItem) {
+                        navItem.click();
+                    }
+                });
+            });
+
+            // Скрывать навигацию при прокрутке вниз и показывать при прокрутке вверх
+            let lastScrollTop = 0;
+            let scrollTimeout;
+            
+            window.addEventListener('scroll', () => {
+                if (!isMobile) return;
+                
+                clearTimeout(scrollTimeout);
+                
+                const currentScroll = window.pageYOffset || document.documentElement.scrollTop;
+                
+                if (currentScroll > lastScrollTop && currentScroll > 50) {
+                    // Scrolling down - hide navigation
+                    document.body.classList.add('nav-hidden');
+                } else {
+                    // Scrolling up - show navigation
+                    document.body.classList.remove('nav-hidden');
+                }
+                
+                lastScrollTop = currentScroll <= 0 ? 0 : currentScroll;
+                
+                // Показываем навигацию снова через 3 секунды после окончания скролла
+                scrollTimeout = setTimeout(() => {
+                    document.body.classList.remove('nav-hidden');
+                }, 3000);
+            });
+        });
+    </script>
+</body>
+</html> 

@@ -1,0 +1,78 @@
+/**
+ * Стили для языкового переключателя
+ */
+ 
+.language-switcher {
+    display: flex;
+    justify-content: center;
+    padding: 0.5rem;
+    background-color: var(--card-bg);
+    border-bottom: 1px solid rgba(177, 94, 255, 0.2);
+    position: relative;
+    z-index: 5;
+}
+
+.lang-btn {
+    background: transparent;
+    border: 1px solid var(--secondary-color);
+    color: var(--text-secondary);
+    padding: 0.3rem 0.7rem;
+    cursor: pointer;
+    font-weight: bold;
+    transition: all 0.3s ease;
+    box-shadow: none;
+    margin: 0 0.2rem;
+    border-radius: var(--radius-sm);
+}
+
+.lang-btn:hover {
+    background-color: rgba(177, 94, 255, 0.1);
+    transform: translateY(-2px);
+    color: var(--secondary-color);
+    box-shadow: var(--shadow);
+}
+
+.lang-btn.active {
+    background: var(--gradient-primary);
+    color: white;
+    border-color: transparent;
+    box-shadow: var(--shadow-md);
+}
+
+.lang-btn.active:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+/* Анимация переключения языка */
+@keyframes langFadeIn {
+    0% { opacity: 0; transform: translateY(-5px); }
+    100% { opacity: 1; transform: translateY(0); }
+}
+
+[data-i18n].lang-changed {
+    animation: langFadeIn 0.3s ease forwards;
+}
+
+/* Адаптивные стили */
+@media (max-width: 768px) {
+    .language-switcher {
+        padding: 0.3rem;
+    }
+    
+    .lang-btn {
+        padding: 0.2rem 0.6rem;
+        font-size: 0.9rem;
+    }
+}
+
+/* Стили для темного режима */
+@media (prefers-color-scheme: dark) {
+    .lang-btn {
+        border-color: var(--border-color);
+    }
+    
+    .lang-btn:hover {
+        background-color: rgba(177, 94, 255, 0.2);
+    }
+} 

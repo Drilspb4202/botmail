@@ -1,0 +1,359 @@
+/* === УЛУЧШЕННЫЕ СТИЛИ ДЛЯ МОБИЛЬНЫХ УСТРОЙСТВ === */
+
+/* Улучшение тост-уведомлений */
+.toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    min-width: 250px;
+    max-width: 450px;
+    background-color: var(--card-bg);
+    border-left: 4px solid var(--secondary-color);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    box-shadow: var(--shadow-lg);
+    transform: translateY(100px);
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.toast.active {
+    transform: translateY(0);
+    opacity: 1;
+    visibility: visible;
+}
+
+.toast.success {
+    border-left-color: var(--success-color);
+}
+
+.toast.error {
+    border-left-color: var(--error-color);
+}
+
+.toast.warning {
+    border-left-color: var(--warning-color);
+}
+
+.toast-message {
+    flex: 1;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-color);
+}
+
+.toast-close {
+    cursor: pointer;
+    margin-left: 10px;
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+}
+
+.toast-close:hover {
+    color: var(--text-color);
+    transform: scale(1.1);
+}
+
+/* Мобильная адаптация для тостов */
+@media (max-width: 576px) {
+    .toast {
+        left: 20px;
+        right: 20px;
+        max-width: calc(100vw - 40px);
+    }
+}
+
+/* Улучшенные анимации для переключения языка */
+[data-i18n].lang-changed {
+    animation: langHighlight 0.5s ease;
+}
+
+@keyframes langHighlight {
+    0% {
+        background-color: rgba(138, 43, 226, 0.05);
+        transform: scale(1);
+    }
+    50% {
+        background-color: rgba(138, 43, 226, 0.1);
+        transform: scale(1.02);
+    }
+    100% {
+        background-color: transparent;
+        transform: scale(1);
+    }
+}
+
+/* Оптимизация скроллинга и производительности */
+html, body {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch; /* для iOS */
+    overscroll-behavior: none;  /* предотвращает проблемы с эластичным скроллом */
+    height: 100%;
+    margin: 0;
+    overflow-x: hidden; /* предотвращает горизонтальный скролл */
+}
+
+body {
+    will-change: scroll-position; /* подсказка браузеру об оптимизации скролла */
+    text-rendering: optimizeSpeed;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Предотвращаем дрожание контента */
+.container, .main-content, section {
+    transform: translateZ(0); /* hardware acceleration */
+    backface-visibility: hidden;
+    perspective: 1000;
+}
+
+/* Визуальная оптимизация и снижение перерисовки */
+* {
+    box-sizing: border-box;
+}
+
+img, video {
+    max-width: 100%;
+    height: auto;
+}
+
+/* Анимации и переходы с оптимизацией */
+.animated, .toast, .fade-in, .clickable-element:hover {
+    transition: all 0.3s cubic-bezier(0.25, 0.1, 0.25, 1.0);
+}
+
+/* Оптимизация полосы прокрутки */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Снижение трясущегося эффекта при загрузке шрифтов */
+html {
+    font-display: swap;
+}
+
+/* Улучшение отзывчивости для мобильных устройств */
+@media (max-width: 768px) {
+    * {
+        touch-action: manipulation; /* оптимизация для тач-событий */
+    }
+
+    .container, .main-content {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+}
+
+/* Оптимизация текста и контента в целом */
+p, h1, h2, h3, h4, h5, h6, span, a, button {
+    max-width: 100%;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+}
+
+/* Стабилизация CLS (Cumulative Layout Shift) */
+.content-wrapper {
+    min-height: 100vh;
+}
+
+/* Для контейнеров изображений и других медиа, чтобы предотвратить скачки при загрузке */
+.image-container, .media-holder {
+    position: relative;
+    height: 0;
+    overflow: hidden;
+}
+
+/* Оптимизация анимаций на странице для уменьшения перерисовки */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Стили для оптимизации скроллинга */
+.is-scrolling {
+    pointer-events: none;
+}
+
+.is-scrolling * {
+    transition: none !important;
+    animation-play-state: paused !important;
+}
+
+.is-scrolling .animated,
+.is-scrolling .fade-in,
+.is-scrolling .transition {
+    will-change: auto;
+}
+
+/* Оптимизации для активных кнопок */
+.clickable-element {
+    position: relative;
+    overflow: hidden;
+    transform: translateZ(0);
+}
+
+.clickable-element.processing {
+    pointer-events: none;
+    opacity: 0.8;
+}
+
+.clickable-element.processing::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    animation: processing-animation 1s infinite;
+}
+
+@keyframes processing-animation {
+    0% { left: -100%; }
+    100% { left: 100%; }
+}
+
+/* Оптимизации для мобильных таблиц */
+.responsive-table {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.table-compact th,
+.table-compact td {
+    padding: 6px 4px;
+    font-size: 0.9em;
+}
+
+@media (max-width: 768px) {
+    .email-item td, 
+    .inbox-item td {
+        max-width: 120px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    
+    .email-sender, 
+    .inbox-email,
+    .email-subject {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    
+    /* Оптимизация кликабельных областей для сенсорных экранов */
+    .clickable-element {
+        min-height: 44px; /* Минимальный размер для сенсорных целей */
+    }
+    
+    button, 
+    [role="button"],
+    a.btn {
+        padding: 10px 15px;
+        margin: 5px 0;
+    }
+    
+    /* Уменьшаем задержки анимаций */
+    * {
+        transition-duration: 0.2s !important;
+    }
+}
+
+/* CSS-классы для визуального состояния загрузки */
+.loading {
+    position: relative;
+}
+
+.loading::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(255, 255, 255, 0.7);
+    z-index: 1000;
+}
+
+.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 30px;
+    height: 30px;
+    margin: -15px 0 0 -15px;
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #3498db;
+    border-radius: 50%;
+    z-index: 1001;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Оптимизации для настроек */
+#settings-section {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+}
+
+#settings-section input,
+#settings-section select,
+#settings-section textarea {
+    will-change: auto;
+}
+
+#settings-section input:focus,
+#settings-section select:focus,
+#settings-section textarea:focus {
+    will-change: transform;
+}
+
+/* Оптимизация для режима предпочтения уменьшенного движения */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+    
+    .animated,
+    .fade-in,
+    .transition {
+        transition: none !important;
+        animation: none !important;
+    }
+} 

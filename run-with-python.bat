@@ -1,0 +1,3 @@
+@echo off
+echo Запуск сервера Python на порту 8000...
+python -m http.server 8000 
